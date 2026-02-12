@@ -13,6 +13,7 @@ import { handleApiError, HttpError } from "@/lib/http";
 import { listTransactionsForExport } from "@/server/services/transactions";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function resolveRange(input: {
   startKey?: string;
