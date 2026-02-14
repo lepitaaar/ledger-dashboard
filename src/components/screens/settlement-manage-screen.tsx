@@ -1044,39 +1044,6 @@ export function SettlementManageScreen(): JSX.Element {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <div
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium ${
-                autoSaveState === "saving"
-                  ? "border-blue-200 bg-blue-50 text-blue-700"
-                  : autoSaveState === "saved"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : autoSaveState === "error"
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
-            >
-              {autoSaveState === "saving" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : autoSaveState === "saved" ? (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              ) : autoSaveState === "error" ? (
-                <AlertCircle className="h-3.5 w-3.5" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              )}
-              <span>
-                {autoSaveState === "saving"
-                  ? "자동 저장 중..."
-                  : autoSaveState === "saved"
-                    ? `마지막 저장 ${lastAutoSavedAt ?? "-"}`
-                    : autoSaveState === "error"
-                      ? "자동 저장 실패"
-                      : "자동 저장 대기"}
-              </span>
-            </div>
-          </div>
-
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <span className="w-14 text-sm font-medium text-slate-600">
               상호
@@ -1148,6 +1115,39 @@ export function SettlementManageScreen(): JSX.Element {
 
       <Card>
         <CardContent className="p-0">
+          <div className="flex justify-end px-4 py-3">
+            <div
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium ${
+                autoSaveState === "saving"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : autoSaveState === "saved"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : autoSaveState === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              {autoSaveState === "saving" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : autoSaveState === "saved" ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : autoSaveState === "error" ? (
+                <AlertCircle className="h-3.5 w-3.5" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {autoSaveState === "saving"
+                  ? "자동 저장 중..."
+                  : autoSaveState === "saved"
+                    ? `마지막 저장 ${lastAutoSavedAt ?? "-"}`
+                    : autoSaveState === "error"
+                      ? "자동 저장 실패"
+                      : "자동 저장 대기"}
+              </span>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] border-collapse text-sm">
               <thead className="bg-slate-50 text-slate-700">
