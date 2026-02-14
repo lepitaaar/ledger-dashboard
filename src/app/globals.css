@@ -21,11 +21,39 @@ body {
 
 html {
   font-size: 18px;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #e5e7eb;
 }
 
 body {
   font-family: 'Pretendard', 'Pretendard Variable', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #e5e7eb;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  border: 2px solid #e5e7eb;
+  background: #9ca3af;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
 }
 
 a {
