@@ -14,8 +14,8 @@ export interface Vendor {
 const vendorSchema = new Schema<Vendor>(
   {
     name: { type: String, required: true, trim: true },
-    representativeName: { type: String, required: true, trim: true },
-    phone: { type: String, required: true, trim: true },
+    representativeName: { type: String, trim: true, default: '' },
+    phone: { type: String, trim: true, default: '' },
     isActive: { type: Boolean, required: true, default: true },
     deletedAt: { type: Date, default: null }
   },

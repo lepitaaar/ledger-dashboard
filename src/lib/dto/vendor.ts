@@ -9,15 +9,29 @@ const phoneSchema = z
   .max(30, '전화번호가 너무 깁니다.')
   .regex(/^[0-9+\-\s()]+$/, '전화번호 형식이 올바르지 않습니다.');
 
+const optionalRepresentativeNameSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
+
+const optionalPhoneSchema = z
+  .string()
+  .trim()
+  .max(30, '전화번호가 너무 깁니다.')
+  .refine((value) => value.length === 0 || value.length >= 7, '전화번호를 입력하세요.')
+  .refine(
+    (value) => value.length === 0 || /^[0-9+\-\s()]+$/.test(value),
+    '전화번호 형식이 올바르지 않습니다.'
+  )
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
+
 export const vendorCreateSchema = z.object({
   name: z.string().trim().min(1, '업체명은 필수입니다.').max(120),
-  representativeName: z
-    .string()
-    .trim()
-    .max(80)
-    .optional()
-    .transform((value) => (value && value.length > 0 ? value : '미입력')),
-  phone: phoneSchema
+  representativeName: optionalRepresentativeNameSchema,
+  phone: optionalPhoneSchema
 });
 
 export const vendorUpdateSchema = z

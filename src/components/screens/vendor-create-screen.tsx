@@ -15,13 +15,21 @@ import { fetchJson } from '@/lib/client';
 
 const createVendorSchema = z.object({
   name: z.string().trim().min(1, '업체명은 필수입니다.').max(120),
-  representativeName: z.string().trim().min(1, '대표자명은 필수입니다.').max(80),
+  representativeName: z
+    .string()
+    .trim()
+    .max(80, '대표자명이 너무 깁니다.')
+    .transform((value) => (value.length > 0 ? value : undefined)),
   phone: z
     .string()
     .trim()
-    .min(7, '전화번호를 입력하세요.')
-    .max(30)
-    .regex(/^[0-9+\-\s()]+$/, '전화번호 형식이 올바르지 않습니다.')
+    .max(30, '전화번호가 너무 깁니다.')
+    .refine((value) => value.length === 0 || value.length >= 7, '전화번호를 입력하세요.')
+    .refine(
+      (value) => value.length === 0 || /^[0-9+\-\s()]+$/.test(value),
+      '전화번호 형식이 올바르지 않습니다.'
+    )
+    .transform((value) => (value.length > 0 ? value : undefined))
 });
 
 type CreateVendorValues = z.infer<typeof createVendorSchema>;
@@ -75,13 +83,13 @@ export function VendorCreateScreen(): JSX.Element {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="representativeName">대표자명 *</Label>
+                <Label htmlFor="representativeName">대표자명</Label>
                 <Input id="representativeName" placeholder="대표자 성함을 입력하세요" {...form.register('representativeName')} />
                 <p className="text-xs text-red-600">{form.formState.errors.representativeName?.message}</p>
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="phone">전화번호 *</Label>
+                <Label htmlFor="phone">전화번호</Label>
                 <Input id="phone" placeholder="010-0000-0000" {...form.register('phone')} />
                 <p className="text-xs text-red-600">{form.formState.errors.phone?.message}</p>
               </div>
