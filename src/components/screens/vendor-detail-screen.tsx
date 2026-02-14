@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,18 +54,29 @@ type VendorDetailResponse = {
   };
 };
 
+type VendorDetailScreenProps = {
+  vendorId: string;
+  initialData?: VendorDetailResponse["data"] | null;
+  initialMeta?: VendorDetailResponse["meta"] | null;
+  initialError?: string | null;
+};
+
 export function VendorDetailScreen({
   vendorId,
-}: {
-  vendorId: string;
-}): JSX.Element {
-  const [data, setData] = useState<VendorDetailResponse["data"] | null>(null);
+  initialData = null,
+  initialMeta = null,
+  initialError = null,
+}: VendorDetailScreenProps): JSX.Element {
+  const [data, setData] = useState<VendorDetailResponse["data"] | null>(
+    initialData,
+  );
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialMeta?.page ?? 1);
   const limit = 20;
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalPages, setTotalPages] = useState(initialMeta?.totalPages ?? 1);
+  const skipInitialFetchRef = useRef(Boolean(initialData));
 
   const [paymentDateKey, setPaymentDateKey] = useState(getTodayDateKey());
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -94,6 +105,10 @@ export function VendorDetailScreen({
   }, [vendorId, page, limit]);
 
   useEffect(() => {
+    if (skipInitialFetchRef.current) {
+      skipInitialFetchRef.current = false;
+      return;
+    }
     void loadDetail();
   }, [loadDetail]);
 
