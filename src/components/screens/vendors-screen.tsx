@@ -3,10 +3,17 @@
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { VendorCreateForm } from "@/components/vendors/vendor-create-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -42,6 +49,10 @@ type VendorListResponse = {
 
 export function VendorsScreen(): JSX.Element {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isCreateModalOpen = searchParams.get("modal") === "create";
+
   const [items, setItems] = useState<VendorRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,37 +68,73 @@ export function VendorsScreen(): JSX.Element {
 
   const [changingId, setChangingId] = useState<string | null>(null);
 
-  const loadVendors = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const setCreateModalOpen = useCallback(
+    (open: boolean): void => {
+      const params = new URLSearchParams(searchParams.toString());
 
-    try {
-      const query = buildQueryString({
-        page,
-        limit,
-        keyword: keyword || undefined,
-      });
-      const response = await fetchJson<VendorListResponse>(
-        `/api/vendors?${query}`,
-      );
-      setItems(response.data);
-      setTotal(response.meta.total);
-      setActiveCount(response.meta.activeCount);
-      setTotalPages(response.meta.totalPages);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "거래처 목록 조회 실패",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [page, limit, keyword]);
+      if (open) {
+        params.set("modal", "create");
+      } else {
+        params.delete("modal");
+      }
+
+      const query = params.toString();
+      router.push(query ? `${pathname}?${query}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
+  const handleCreateModalOpen = useCallback((): void => {
+    setCreateModalOpen(true);
+  }, [setCreateModalOpen]);
+
+  const handleCreateModalClose = useCallback((): void => {
+    setCreateModalOpen(false);
+  }, [setCreateModalOpen]);
+
+  const loadVendors = useCallback(
+    async (options?: { page?: number; keyword?: string }) => {
+      const targetPage = options?.page ?? page;
+      const targetKeyword = options?.keyword ?? keyword;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const query = buildQueryString({
+          page: targetPage,
+          limit,
+          keyword: targetKeyword || undefined,
+        });
+        const response = await fetchJson<VendorListResponse>(`/api/vendors?${query}`);
+        setItems(response.data);
+        setTotal(response.meta.total);
+        setActiveCount(response.meta.activeCount);
+        setTotalPages(response.meta.totalPages);
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "거래처 목록 조회 실패",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [keyword, limit, page],
+  );
 
   useEffect(() => {
     void loadVendors();
   }, [loadVendors]);
+
+  const handleCreateSuccess = useCallback(async (): Promise<void> => {
+    setKeywordInput("");
+    setKeyword("");
+    setPage(1);
+    setCreateModalOpen(false);
+    await loadVendors({ page: 1, keyword: "" });
+  }, [loadVendors, setCreateModalOpen]);
 
   const handleStatusChange = async (
     vendor: VendorRow,
@@ -175,8 +222,8 @@ export function VendorsScreen(): JSX.Element {
                 </Button>
               </div>
 
-              <Button asChild>
-                <Link href="/dashboard/vendors/new">신규 거래처 등록</Link>
+              <Button type="button" onClick={handleCreateModalOpen}>
+                신규 거래처 등록
               </Button>
             </div>
           </div>
@@ -291,6 +338,25 @@ export function VendorsScreen(): JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isCreateModalOpen}
+        onOpenChange={(open) => {
+          if (open !== isCreateModalOpen) {
+            setCreateModalOpen(open);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>신규 거래처 등록</DialogTitle>
+          </DialogHeader>
+          <VendorCreateForm
+            onSuccess={handleCreateSuccess}
+            onCancel={handleCreateModalClose}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

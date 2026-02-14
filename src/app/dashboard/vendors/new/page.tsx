@@ -1,5 +1,5 @@
-import { VendorCreateScreen } from '@/components/screens/vendor-create-screen';
+import { redirect } from "next/navigation";
 
-export default function VendorCreatePage(): JSX.Element {
-  return <VendorCreateScreen />;
+export default function VendorCreatePage(): never {
+  redirect("/dashboard/vendors?modal=create");
 }
