@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FileSpreadsheet, Search } from "lucide-react";
 import { DateTime } from "luxon";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,14 @@ type VendorListResponse = {
 
 type ProductListResponse = {
   data: ProductOption[];
+};
+
+type TransactionsScreenProps = {
+  initialRows?: TransactionRow[];
+  initialMeta?: TransactionListResponse["meta"] | null;
+  initialVendors?: VendorOption[];
+  initialProducts?: ProductOption[];
+  initialError?: string | null;
 };
 
 const quickPresets: Array<{ key: DatePreset; label: string }> = [
@@ -118,29 +126,47 @@ function normalizeRange(
   return { startKey: endKey, endKey: startKey };
 }
 
-export function TransactionsScreen(): JSX.Element {
+export function TransactionsScreen({
+  initialRows = [],
+  initialMeta = null,
+  initialVendors,
+  initialProducts,
+  initialError = null,
+}: TransactionsScreenProps): JSX.Element {
   const today = getTodayDateKey();
+  const initialRange = initialMeta?.appliedRange ?? {
+    startKey: today,
+    endKey: today,
+  };
 
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [rows, setRows] = useState<TransactionRow[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>(initialVendors ?? []);
+  const [products, setProducts] = useState<ProductOption[]>(
+    initialProducts ?? [],
+  );
+  const [rows, setRows] = useState<TransactionRow[]>(initialRows);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialMeta?.page ?? 1);
   const limit = 50;
-  const [totalPages, setTotalPages] = useState(1);
-  const [todayTotalAmount, setTodayTotalAmount] = useState(0);
+  const [totalPages, setTotalPages] = useState(initialMeta?.totalPages ?? 1);
+  const [todayTotalAmount, setTodayTotalAmount] = useState(
+    initialMeta?.todayTotalAmount ?? 0,
+  );
 
   const [preset, setPreset] = useState<DatePreset | "custom">("today");
-  const [startKey, setStartKey] = useState(today);
-  const [endKey, setEndKey] = useState(today);
+  const [startKey, setStartKey] = useState(initialRange.startKey);
+  const [endKey, setEndKey] = useState(initialRange.endKey);
 
   const [vendorFilter, setVendorFilter] = useState("");
   const [productFilter, setProductFilter] = useState("");
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
+  const skipInitialMetaLoadRef = useRef(
+    initialVendors !== undefined && initialProducts !== undefined,
+  );
+  const skipInitialTransactionsLoadRef = useRef(Boolean(initialMeta));
 
   const effectiveRange = useMemo(
     () => normalizeRange(startKey, endKey),
@@ -205,10 +231,18 @@ export function TransactionsScreen(): JSX.Element {
   ]);
 
   useEffect(() => {
+    if (skipInitialMetaLoadRef.current) {
+      skipInitialMetaLoadRef.current = false;
+      return;
+    }
     void loadMeta();
   }, [loadMeta]);
 
   useEffect(() => {
+    if (skipInitialTransactionsLoadRef.current) {
+      skipInitialTransactionsLoadRef.current = false;
+      return;
+    }
     void loadTransactions();
   }, [loadTransactions]);
 
