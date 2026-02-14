@@ -42,6 +42,7 @@ type ProductOption = {
   name: string;
   unit?: string;
   vendorId?: string | null;
+  createdAt?: string;
 };
 
 type VendorListResponse = {
@@ -260,6 +261,14 @@ function toDateKeyValue(value: string): string {
   return parsed.toFormat(DATE_KEY_FORMAT);
 }
 
+function sortProductsByLatest(products: ProductOption[]): ProductOption[] {
+  return [...products].sort((a, b) => {
+    const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return bTime - aTime;
+  });
+}
+
 export function SettlementManageScreen(): JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -318,7 +327,7 @@ export function SettlementManageScreen(): JSX.Element {
       ]);
 
       setVendors(vendorsResponse.data);
-      setProducts(productsResponse.data);
+      setProducts(sortProductsByLatest(productsResponse.data));
 
       if (selectedVendorId) {
         const selected = vendorsResponse.data.find(
@@ -938,13 +947,14 @@ export function SettlementManageScreen(): JSX.Element {
   };
 
   const getProductSuggestions = (row: EditableRow): ProductOption[] => {
+    const sortedProducts = sortProductsByLatest(productsByVendor);
     const query = row.productName.trim().toLowerCase();
 
     if (!query) {
-      return productsByVendor.slice(0, 8);
+      return sortedProducts.slice(0, 8);
     }
 
-    return productsByVendor
+    return sortedProducts
       .filter((product) => product.name.toLowerCase().includes(query))
       .slice(0, 8);
   };
