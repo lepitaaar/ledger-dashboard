@@ -53,15 +53,15 @@
 ## 아키텍처
 
 ```mermaid
-graph TD
-    A[Dashboard Screens] --> B[Next.js Route Handlers (/api)]
-    B --> C[Zod DTO Validation]
-    C --> D[Service Layer]
-    D --> E[Mongoose Models]
-    E --> F[(MongoDB Atlas)]
-    D --> G[Audit Log]
-    B --> H[Excel Export]
-    B --> I[A5 Print Config (.env)]
+flowchart TD
+    A["Dashboard Screens"] --> B["Next.js Route Handlers (/api)"]
+    B --> C["Zod DTO Validation"]
+    C --> D["Service Layer"]
+    D --> E["Mongoose Models"]
+    E --> F["MongoDB Atlas"]
+    D --> G["Audit Log"]
+    B --> H["Excel Export"]
+    B --> I["A5 Print Config (.env)"]
 ```
 
 레이어 역할:
