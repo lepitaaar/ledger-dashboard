@@ -3,9 +3,12 @@
 import { DatePicker } from "@/components/ui/date-picker";
 
 import {
+  AlertCircle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   FileSpreadsheet,
+  Loader2,
   Pencil,
   Plus,
   Printer,
@@ -126,6 +129,8 @@ type PrintSupplier = {
 type PrintConfigResponse = {
   data: PrintSupplier;
 };
+
+type AutoSaveState = "idle" | "saving" | "saved" | "error";
 
 function createLocalId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -284,6 +289,9 @@ export function SettlementManageScreen(): JSX.Element {
   const [savedSnapshots, setSavedSnapshots] = useState<
     Record<string, SavedRowSnapshot>
   >({});
+  const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>("idle");
+  const [autoSaveRowKey, setAutoSaveRowKey] = useState<string | null>(null);
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
   const rowsRef = useRef<EditableRow[]>(rows);
 
   useEffect(() => {
@@ -532,10 +540,16 @@ export function SettlementManageScreen(): JSX.Element {
     }
 
     setProcessingRowId(row.localId);
+    setAutoSaveState("saving");
+    setAutoSaveRowKey(row.id ?? row.localId);
 
     try {
+      let savedId: string | undefined;
+
       if (row.id) {
-        await fetchJson<{ data: unknown }>("/api/settlements/manage", {
+        const response = await fetchJson<{ data: { _id: string } }>(
+          "/api/settlements/manage",
+          {
           method: "PATCH",
           body: JSON.stringify({
             id: row.id,
@@ -544,9 +558,13 @@ export function SettlementManageScreen(): JSX.Element {
             qty: payload.qty,
             unitPrice: payload.unitPrice,
           }),
-        });
+          },
+        );
+        savedId = response.data._id;
       } else {
-        await fetchJson<{ data: unknown }>("/api/settlements/manage", {
+        const response = await fetchJson<{ data: { _id: string } }>(
+          "/api/settlements/manage",
+          {
           method: "POST",
           body: JSON.stringify({
             vendorId: selectedVendorId,
@@ -556,11 +574,19 @@ export function SettlementManageScreen(): JSX.Element {
             qty: payload.qty,
             unitPrice: payload.unitPrice,
           }),
-        });
+          },
+        );
+        savedId = response.data._id;
       }
 
       await loadRows();
+      setAutoSaveState("saved");
+      setAutoSaveRowKey(savedId ?? row.id ?? row.localId);
+      setLastAutoSavedAt(
+        DateTime.now().setZone(KST_ZONE).toFormat("HH:mm:ss"),
+      );
     } catch (error) {
+      setAutoSaveState("error");
       alert(error instanceof Error ? error.message : "행 저장 실패");
     } finally {
       setProcessingRowId(null);
@@ -1008,6 +1034,39 @@ export function SettlementManageScreen(): JSX.Element {
             </div>
           </div>
 
+          <div className="flex justify-end">
+            <div
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium ${
+                autoSaveState === "saving"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : autoSaveState === "saved"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : autoSaveState === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              {autoSaveState === "saving" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : autoSaveState === "saved" ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : autoSaveState === "error" ? (
+                <AlertCircle className="h-3.5 w-3.5" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {autoSaveState === "saving"
+                  ? "자동 저장 중..."
+                  : autoSaveState === "saved"
+                    ? `마지막 저장 ${lastAutoSavedAt ?? "-"}`
+                    : autoSaveState === "error"
+                      ? "자동 저장 실패"
+                      : "자동 저장 대기"}
+              </span>
+            </div>
+          </div>
+
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <span className="w-14 text-sm font-medium text-slate-600">
               상호
@@ -1113,6 +1172,16 @@ export function SettlementManageScreen(): JSX.Element {
                   const suggestions = getProductSuggestions(row);
                   const rowBusy = processingRowId === row.localId;
                   const isEditingRow = editingRowId === row.localId;
+                  const currentRowKey = row.id ?? row.localId;
+                  const isAutoSavingRow =
+                    autoSaveState === "saving" &&
+                    autoSaveRowKey === currentRowKey;
+                  const isAutoSavedRow =
+                    autoSaveState === "saved" &&
+                    autoSaveRowKey === currentRowKey;
+                  const isAutoSaveFailedRow =
+                    autoSaveState === "error" &&
+                    autoSaveRowKey === currentRowKey;
                   const rowLocked =
                     Boolean(row.id) && editingRowId !== row.localId;
                   const inputClassName = `h-8 border-0 px-1 shadow-none focus-visible:ring-0 ${
@@ -1260,42 +1329,58 @@ export function SettlementManageScreen(): JSX.Element {
                       </td>
 
                       <td className="border border-slate-200 px-2 py-1 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            title="수정"
-                            className={`rounded p-1 transition-colors ${
-                              isEditingRow
-                                ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
-                                : "text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                            } disabled:opacity-50`}
-                            disabled={rowBusy}
-                            onClick={() =>
-                              setEditingRowId((current) =>
-                                current === row.localId ? null : row.localId,
-                              )
-                            }
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="반품"
-                            className="rounded p-1 text-slate-400 hover:bg-orange-50 hover:text-orange-500 disabled:opacity-50"
-                            disabled={!row.id || rowBusy}
-                            onClick={() => void returnRow(row)}
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="삭제"
-                            className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
-                            disabled={rowBusy}
-                            onClick={() => void deleteRow(row)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              title="수정"
+                              className={`rounded p-1 transition-colors ${
+                                isEditingRow
+                                  ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
+                                  : "text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                              } disabled:opacity-50`}
+                              disabled={rowBusy}
+                              onClick={() =>
+                                setEditingRowId((current) =>
+                                  current === row.localId ? null : row.localId,
+                                )
+                              }
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="반품"
+                              className="rounded p-1 text-slate-400 hover:bg-orange-50 hover:text-orange-500 disabled:opacity-50"
+                              disabled={!row.id || rowBusy}
+                              onClick={() => void returnRow(row)}
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              title="삭제"
+                              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                              disabled={rowBusy}
+                              onClick={() => void deleteRow(row)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <p className="min-h-4 text-[11px] leading-4">
+                            {isAutoSavingRow ? (
+                              <span className="inline-flex items-center gap-1 text-blue-600">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                저장중...
+                              </span>
+                            ) : isAutoSavedRow ? (
+                              <span className="text-emerald-600">
+                                저장됨 {lastAutoSavedAt ?? ""}
+                              </span>
+                            ) : isAutoSaveFailedRow ? (
+                              <span className="text-red-600">저장 실패</span>
+                            ) : null}
+                          </p>
                         </div>
                       </td>
                     </tr>
