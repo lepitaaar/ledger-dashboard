@@ -261,11 +261,11 @@ function toDateKeyValue(value: string): string {
   return parsed.toFormat(DATE_KEY_FORMAT);
 }
 
-function sortProductsByLatest(products: ProductOption[]): ProductOption[] {
+function sortProductsByCreatedAtAsc(products: ProductOption[]): ProductOption[] {
   return [...products].sort((a, b) => {
     const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
     const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return bTime - aTime;
+    return aTime - bTime;
   });
 }
 
@@ -327,7 +327,7 @@ export function SettlementManageScreen(): JSX.Element {
       ]);
 
       setVendors(vendorsResponse.data);
-      setProducts(sortProductsByLatest(productsResponse.data));
+      setProducts(sortProductsByCreatedAtAsc(productsResponse.data));
 
       if (selectedVendorId) {
         const selected = vendorsResponse.data.find(
@@ -947,7 +947,7 @@ export function SettlementManageScreen(): JSX.Element {
   };
 
   const getProductSuggestions = (row: EditableRow): ProductOption[] => {
-    const sortedProducts = sortProductsByLatest(productsByVendor);
+    const sortedProducts = sortProductsByCreatedAtAsc(productsByVendor);
     const query = row.productName.trim().toLowerCase();
 
     if (!query) {
