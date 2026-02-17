@@ -5,15 +5,9 @@ import { Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { VendorCreateForm } from "@/components/vendors/vendor-create-form";
+import { VendorUpsertDialog } from "@/components/vendors/vendor-upsert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -68,6 +62,8 @@ export function VendorsScreen(): JSX.Element {
 
   const [changingId, setChangingId] = useState<string | null>(null);
   const [editingVendor, setEditingVendor] = useState<VendorRow | null>(null);
+  const isUpsertModalOpen = isCreateModalOpen || Boolean(editingVendor);
+  const upsertMode = editingVendor ? "edit" : "create";
 
   const setCreateModalOpen = useCallback(
     (open: boolean): void => {
@@ -86,6 +82,7 @@ export function VendorsScreen(): JSX.Element {
   );
 
   const handleCreateModalOpen = useCallback((): void => {
+    setEditingVendor(null);
     setCreateModalOpen(true);
   }, [setCreateModalOpen]);
 
@@ -141,10 +138,51 @@ export function VendorsScreen(): JSX.Element {
     setEditingVendor(null);
   }, []);
 
+  const handleEditModalOpen = useCallback(
+    (vendor: VendorRow): void => {
+      setCreateModalOpen(false);
+      setEditingVendor(vendor);
+    },
+    [setCreateModalOpen],
+  );
+
   const handleEditSuccess = useCallback(async (): Promise<void> => {
     setEditingVendor(null);
     await loadVendors();
   }, [loadVendors]);
+
+  const handleUpsertModalOpenChange = useCallback(
+    (open: boolean): void => {
+      if (open) {
+        if (!editingVendor) {
+          setCreateModalOpen(true);
+        }
+        return;
+      }
+
+      if (editingVendor) {
+        handleEditModalClose();
+        return;
+      }
+
+      handleCreateModalClose();
+    },
+    [
+      editingVendor,
+      handleCreateModalClose,
+      handleEditModalClose,
+      setCreateModalOpen,
+    ],
+  );
+
+  const handleUpsertSuccess = useCallback(async (): Promise<void> => {
+    if (editingVendor) {
+      await handleEditSuccess();
+      return;
+    }
+
+    await handleCreateSuccess();
+  }, [editingVendor, handleCreateSuccess, handleEditSuccess]);
 
   const handleStatusChange = async (
     vendor: VendorRow,
@@ -312,7 +350,7 @@ export function VendorsScreen(): JSX.Element {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setEditingVendor(item)}
+                          onClick={() => handleEditModalOpen(item)}
                         >
                           수정
                         </Button>
@@ -362,54 +400,22 @@ export function VendorsScreen(): JSX.Element {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={isCreateModalOpen}
-        onOpenChange={(open) => {
-          if (open !== isCreateModalOpen) {
-            setCreateModalOpen(open);
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>신규 거래처 등록</DialogTitle>
-          </DialogHeader>
-          <VendorCreateForm
-            onSuccess={handleCreateSuccess}
-            onCancel={handleCreateModalClose}
-          />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(editingVendor)}
-        onOpenChange={(open) => {
-          if (!open) {
-            handleEditModalClose();
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>거래처 수정</DialogTitle>
-          </DialogHeader>
-          <VendorCreateForm
-            mode="edit"
-            initialValues={
-              editingVendor
-                ? {
-                    id: editingVendor._id,
-                    name: editingVendor.name,
-                    representativeName: editingVendor.representativeName,
-                    phone: editingVendor.phone,
-                  }
-                : null
-            }
-            onSuccess={handleEditSuccess}
-            onCancel={handleEditModalClose}
-          />
-        </DialogContent>
-      </Dialog>
+      <VendorUpsertDialog
+        open={isUpsertModalOpen}
+        mode={upsertMode}
+        initialValues={
+          editingVendor
+            ? {
+                id: editingVendor._id,
+                name: editingVendor.name,
+                representativeName: editingVendor.representativeName,
+                phone: editingVendor.phone,
+              }
+            : null
+        }
+        onOpenChange={handleUpsertModalOpenChange}
+        onSuccess={handleUpsertSuccess}
+      />
     </div>
   );
 }
