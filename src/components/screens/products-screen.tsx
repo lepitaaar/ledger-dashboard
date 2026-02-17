@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Trash2 } from "lucide-react";
+import { Pencil, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
@@ -52,6 +52,9 @@ export function ProductsScreen(): JSX.Element {
 
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const isUpsertModalOpen = isCreateModalOpen || Boolean(editingProduct);
+  const upsertMode = editingProduct ? "edit" : "create";
 
   const setCreateModalOpen = useCallback(
     (open: boolean): void => {
@@ -70,8 +73,21 @@ export function ProductsScreen(): JSX.Element {
   );
 
   const handleCreateModalOpen = useCallback((): void => {
+    setEditingProduct(null);
     setCreateModalOpen(true);
   }, [setCreateModalOpen]);
+
+  const handleEditModalOpen = useCallback(
+    (product: ProductRow): void => {
+      setCreateModalOpen(false);
+      setEditingProduct(product);
+    },
+    [setCreateModalOpen],
+  );
+
+  const handleEditModalClose = useCallback((): void => {
+    setEditingProduct(null);
+  }, []);
 
   const loadProducts = useCallback(async (options?: { page?: number; keyword?: string }) => {
     const targetPage = options?.page ?? page;
@@ -113,6 +129,39 @@ export function ProductsScreen(): JSX.Element {
     setCreateModalOpen(false);
     await loadProducts({ page: 1, keyword: "" });
   }, [loadProducts, setCreateModalOpen]);
+
+  const handleEditSuccess = useCallback(async (): Promise<void> => {
+    setEditingProduct(null);
+    await loadProducts();
+  }, [loadProducts]);
+
+  const handleUpsertModalOpenChange = useCallback(
+    (open: boolean): void => {
+      if (open) {
+        if (!editingProduct) {
+          setCreateModalOpen(true);
+        }
+        return;
+      }
+
+      if (editingProduct) {
+        handleEditModalClose();
+        return;
+      }
+
+      setCreateModalOpen(false);
+    },
+    [editingProduct, handleEditModalClose, setCreateModalOpen],
+  );
+
+  const handleUpsertSuccess = useCallback(async (): Promise<void> => {
+    if (editingProduct) {
+      await handleEditSuccess();
+      return;
+    }
+
+    await handleCreateSuccess();
+  }, [editingProduct, handleCreateSuccess, handleEditSuccess]);
 
   const handleDelete = async (id: string): Promise<void> => {
     if (!window.confirm("해당 상품을 삭제하시겠습니까?")) {
@@ -176,7 +225,7 @@ export function ProductsScreen(): JSX.Element {
                 <TableHead>품목</TableHead>
                 <TableHead>규격</TableHead>
                 <TableHead>등록일시</TableHead>
-                <TableHead className="text-center">삭제</TableHead>
+                <TableHead className="text-center">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -200,13 +249,25 @@ export function ProductsScreen(): JSX.Element {
                       {new Date(item.createdAt).toLocaleString("ko-KR")}
                     </TableCell>
                     <TableCell className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void handleDelete(item._id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditModalOpen(item)}
+                        >
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          수정
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDelete(item._id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -251,9 +312,19 @@ export function ProductsScreen(): JSX.Element {
       </Card>
 
       <ProductUpsertDialog
-        open={isCreateModalOpen}
-        onOpenChange={setCreateModalOpen}
-        onSuccess={handleCreateSuccess}
+        open={isUpsertModalOpen}
+        mode={upsertMode}
+        initialValues={
+          editingProduct
+            ? {
+                id: editingProduct._id,
+                name: editingProduct.name,
+                unit: editingProduct.unit,
+              }
+            : null
+        }
+        onOpenChange={handleUpsertModalOpenChange}
+        onSuccess={handleUpsertSuccess}
       />
     </div>
   );
