@@ -46,7 +46,7 @@ type TransactionListResponse = {
     limit: number;
     total: number;
     totalPages: number;
-    todayTotalAmount: number;
+    periodTotalAmount: number;
     appliedRange: { startKey: string; endKey: string } | null;
   };
 };
@@ -151,8 +151,8 @@ export function TransactionsScreen({
   const [page, setPage] = useState(initialMeta?.page ?? 1);
   const limit = 50;
   const [totalPages, setTotalPages] = useState(initialMeta?.totalPages ?? 1);
-  const [todayTotalAmount, setTodayTotalAmount] = useState(
-    initialMeta?.todayTotalAmount ?? 0,
+  const [periodTotalAmount, setPeriodTotalAmount] = useState(
+    initialMeta?.periodTotalAmount ?? 0,
   );
 
   const [preset, setPreset] = useState<DatePreset | "custom">("today");
@@ -212,7 +212,7 @@ export function TransactionsScreen({
 
       setRows(response.data);
       setTotalPages(response.meta.totalPages);
-      setTodayTotalAmount(response.meta.todayTotalAmount);
+      setPeriodTotalAmount(response.meta.periodTotalAmount);
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : "거래 조회 실패",
@@ -533,10 +533,10 @@ export function TransactionsScreen({
                     colSpan={5}
                     className="border border-slate-200 px-3 py-3 text-right text-sm font-semibold text-slate-700"
                   >
-                    오늘 매출 총계:
+                    매출 총계:
                   </td>
                   <td className="border border-slate-200 px-3 py-3 text-right text-base font-bold text-primary">
-                    {formatCurrency(todayTotalAmount)}
+                    {formatCurrency(periodTotalAmount)}
                   </td>
                   <td className="border border-slate-200" />
                 </tr>

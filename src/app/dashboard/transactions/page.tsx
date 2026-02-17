@@ -36,7 +36,7 @@ export default async function TransactionsPage(): Promise<JSX.Element> {
           limit: transactions.limit,
           total: transactions.total,
           totalPages: Math.max(1, Math.ceil(transactions.total / transactions.limit)),
-          todayTotalAmount: transactions.todayTotalAmount,
+          periodTotalAmount: transactions.periodTotalAmount,
           appliedRange: {
             startKey: today,
             endKey: today

@@ -1,6 +1,5 @@
 import { type PipelineStage, Types } from 'mongoose';
 
-import { getTodayDateKey } from '@/lib/kst';
 import { normalizePagination } from '@/lib/pagination';
 import { escapeRegExp } from '@/lib/utils';
 import { TransactionModel } from '@/server/models/transaction';
@@ -112,7 +111,7 @@ export function calculateAmount(unitPrice: number, qty: number): number {
 export async function listTransactions(
   filters: TransactionQueryFilter,
   inputPagination: { page?: number; limit?: number }
-): Promise<{ items: TransactionListItem[]; total: number; page: number; limit: number; todayTotalAmount: number }> {
+): Promise<{ items: TransactionListItem[]; total: number; page: number; limit: number; periodTotalAmount: number }> {
   const { page, limit, skip } = normalizePagination(inputPagination.page, inputPagination.limit);
   const baseMatch = buildBaseMatch(filters);
   const lookupStages = buildLookupAndKeywordStages(filters.keyword);
@@ -143,38 +142,29 @@ export async function listTransactions(
             }
           }
         ],
-        total: [{ $count: 'count' }]
+        total: [{ $count: 'count' }],
+        totalAmount: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$amount' }
+            }
+          }
+        ]
       }
     }
   ]);
 
   const items = ((result?.items as Record<string, unknown>[] | undefined) ?? []).map(mapTransactionItem);
   const total = Number((result?.total?.[0] as { count?: number } | undefined)?.count ?? 0);
-
-  const todayMatch = {
-    ...baseMatch,
-    dateKey: getTodayDateKey()
-  };
-
-  const [todayResult] = await TransactionModel.aggregate([
-    { $match: todayMatch },
-    ...lookupStages,
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' }
-      }
-    }
-  ]);
-
-  const todayTotalAmount = Number((todayResult as { total?: number } | undefined)?.total ?? 0);
+  const periodTotalAmount = Number((result?.totalAmount?.[0] as { total?: number } | undefined)?.total ?? 0);
 
   return {
     items,
     total,
     page,
     limit,
-    todayTotalAmount
+    periodTotalAmount
   };
 }
 

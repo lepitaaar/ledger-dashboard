@@ -54,7 +54,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       data: result.items,
       meta: {
         ...buildPageMeta(result.page, result.limit, result.total),
-        todayTotalAmount: result.todayTotalAmount,
+        periodTotalAmount: result.periodTotalAmount,
         appliedRange: range ?? null
       }
     });
