@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { ProductUpsertDialog } from "@/components/products/product-upsert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,11 @@ type ProductListResponse = {
 };
 
 export function ProductsScreen(): JSX.Element {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isCreateModalOpen = searchParams.get("modal") === "create";
+
   const [items, setItems] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,15 +53,38 @@ export function ProductsScreen(): JSX.Element {
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
 
-  const loadProducts = useCallback(async () => {
+  const setCreateModalOpen = useCallback(
+    (open: boolean): void => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      if (open) {
+        params.set("modal", "create");
+      } else {
+        params.delete("modal");
+      }
+
+      const query = params.toString();
+      router.push(query ? `${pathname}?${query}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
+  const handleCreateModalOpen = useCallback((): void => {
+    setCreateModalOpen(true);
+  }, [setCreateModalOpen]);
+
+  const loadProducts = useCallback(async (options?: { page?: number; keyword?: string }) => {
+    const targetPage = options?.page ?? page;
+    const targetKeyword = options?.keyword ?? keyword;
+
     setLoading(true);
     setError(null);
 
     try {
       const query = buildQueryString({
-        page,
+        page: targetPage,
         limit,
-        keyword: keyword || undefined,
+        keyword: targetKeyword || undefined,
       });
 
       const response = await fetchJson<ProductListResponse>(
@@ -76,6 +105,14 @@ export function ProductsScreen(): JSX.Element {
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
+
+  const handleCreateSuccess = useCallback(async (): Promise<void> => {
+    setKeywordInput("");
+    setKeyword("");
+    setPage(1);
+    setCreateModalOpen(false);
+    await loadProducts({ page: 1, keyword: "" });
+  }, [loadProducts, setCreateModalOpen]);
 
   const handleDelete = async (id: string): Promise<void> => {
     if (!window.confirm("해당 상품을 삭제하시겠습니까?")) {
@@ -99,8 +136,8 @@ export function ProductsScreen(): JSX.Element {
         <CardHeader>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <CardTitle className="text-xl">상품 관리</CardTitle>
-            <Button asChild variant="success">
-              <Link href="/dashboard/products/new">신규 상품 등록</Link>
+            <Button type="button" variant="success" onClick={handleCreateModalOpen}>
+              신규 상품 등록
             </Button>
           </div>
 
@@ -212,6 +249,12 @@ export function ProductsScreen(): JSX.Element {
           </div>
         </CardContent>
       </Card>
+
+      <ProductUpsertDialog
+        open={isCreateModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onSuccess={handleCreateSuccess}
+      />
     </div>
   );
 }

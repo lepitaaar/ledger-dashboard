@@ -1,5 +1,5 @@
-import { ProductCreateScreen } from '@/components/screens/product-create-screen';
+import { redirect } from "next/navigation";
 
-export default function ProductCreatePage(): JSX.Element {
-  return <ProductCreateScreen />;
+export default function ProductCreatePage(): never {
+  redirect("/dashboard/products?modal=create");
 }
