@@ -32,9 +32,9 @@ const createVendorSchema = z.object({
 
 type CreateVendorValues = z.infer<typeof createVendorSchema>;
 
-type VendorFormMode = "create" | "edit";
+export type VendorFormMode = "create" | "edit";
 
-type VendorFormInitialValues = {
+export type VendorFormInitialValues = {
   id: string;
   name: string;
   representativeName?: string;
