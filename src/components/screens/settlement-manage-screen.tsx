@@ -93,6 +93,8 @@ type EditableField =
   | "qty"
   | "unitPrice";
 
+type EditableValueField = Exclude<EditableField, "selected">;
+
 type PersistableRowPayload = {
   productName: string;
   productUnit?: string;
@@ -106,6 +108,8 @@ type SavedRowSnapshot = {
   qty: number;
   unitPrice: number;
 };
+
+type RowValidationErrors = Partial<Record<EditableValueField, string>>;
 
 const MIN_BASE_ROWS = 15;
 const PRINT_ROWS_PER_PAGE = 23;
@@ -298,6 +302,9 @@ export function SettlementManageScreen(): JSX.Element {
   const [savedSnapshots, setSavedSnapshots] = useState<
     Record<string, SavedRowSnapshot>
   >({});
+  const [rowValidationErrors, setRowValidationErrors] = useState<
+    Record<string, RowValidationErrors>
+  >({});
   const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>("idle");
   const [autoSaveRowKey, setAutoSaveRowKey] = useState<string | null>(null);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
@@ -350,6 +357,7 @@ export function SettlementManageScreen(): JSX.Element {
     if (!selectedVendorId) {
       setRows(ensureBaseRows([]));
       setSavedSnapshots({});
+      setRowValidationErrors({});
       setEditingRowId(null);
       return;
     }
@@ -379,12 +387,14 @@ export function SettlementManageScreen(): JSX.Element {
           ]),
         ),
       );
+      setRowValidationErrors({});
 
       setVendorInput((prev) => prev || response.data.vendor.name);
     } catch (error) {
       alert(error instanceof Error ? error.message : "계산서 데이터 조회 실패");
       setRows(ensureBaseRows([]));
       setSavedSnapshots({});
+      setRowValidationErrors({});
     } finally {
       setLoadingRows(false);
     }
@@ -446,6 +456,29 @@ export function SettlementManageScreen(): JSX.Element {
         };
       }),
     );
+
+    if (field !== "selected") {
+      setRowValidationErrors((prev) => {
+        const rowErrors = prev[localId];
+        if (!rowErrors || !rowErrors[field]) {
+          return prev;
+        }
+
+        const nextRowErrors = { ...rowErrors };
+        delete nextRowErrors[field];
+
+        if (Object.keys(nextRowErrors).length === 0) {
+          const rest = { ...prev };
+          delete rest[localId];
+          return rest;
+        }
+
+        return {
+          ...prev,
+          [localId]: nextRowErrors,
+        };
+      });
+    }
   };
 
   const selectVendor = (vendor: VendorOption): void => {
@@ -493,29 +526,48 @@ export function SettlementManageScreen(): JSX.Element {
 
   const buildPersistablePayload = (
     row: EditableRow,
-  ): PersistableRowPayload | null => {
+  ): { payload: PersistableRowPayload | null; errors: RowValidationErrors } => {
     const productName = row.productName.trim();
     const productUnit = row.productUnit.trim();
     const qty = parseNumber(row.qty);
     const unitPrice = parseNumber(row.unitPrice);
+    const errors: RowValidationErrors = {};
 
     if (!productName) {
-      return null;
+      errors.productName = "품목은 필수입니다.";
+    } else if (productName.length > 200) {
+      errors.productName = "품목은 200자 이하로 입력하세요.";
+    }
+
+    if (productUnit.length > 50) {
+      errors.productUnit = "규격은 50자 이하로 입력하세요.";
     }
 
     if (!Number.isFinite(qty)) {
-      return null;
+      errors.qty = "수량은 숫자여야 합니다.";
     }
 
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      return null;
+    if (!Number.isFinite(unitPrice)) {
+      errors.unitPrice = "단가는 숫자여야 합니다.";
+    } else if (unitPrice < 0) {
+      errors.unitPrice = "단가는 0 이상이어야 합니다.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      return {
+        payload: null,
+        errors,
+      };
     }
 
     return {
-      productName,
-      productUnit: productUnit || undefined,
-      qty,
-      unitPrice,
+      payload: {
+        productName,
+        productUnit: productUnit || undefined,
+        qty,
+        unitPrice,
+      },
+      errors: {},
     };
   };
 
@@ -607,10 +659,26 @@ export function SettlementManageScreen(): JSX.Element {
       return;
     }
 
-    const payload = buildPersistablePayload(row);
+    const { payload, errors } = buildPersistablePayload(row);
     if (!payload) {
+      setRowValidationErrors((prev) => ({
+        ...prev,
+        [row.localId]: errors,
+      }));
+      setAutoSaveState("error");
+      setAutoSaveRowKey(row.id ?? row.localId);
       return;
     }
+
+    setRowValidationErrors((prev) => {
+      if (!prev[row.localId]) {
+        return prev;
+      }
+
+      const rest = { ...prev };
+      delete rest[row.localId];
+      return rest;
+    });
 
     if (isSameAsSavedSnapshot(row, payload)) {
       setEditingRowId((current) => (current === row.localId ? null : current));
@@ -973,6 +1041,27 @@ export function SettlementManageScreen(): JSX.Element {
         };
       }),
     );
+    setRowValidationErrors((prev) => {
+      const rowErrors = prev[row.localId];
+      if (!rowErrors || (!rowErrors.productName && !rowErrors.productUnit)) {
+        return prev;
+      }
+
+      const nextRowErrors = { ...rowErrors };
+      delete nextRowErrors.productName;
+      delete nextRowErrors.productUnit;
+
+      if (Object.keys(nextRowErrors).length === 0) {
+        const rest = { ...prev };
+        delete rest[row.localId];
+        return rest;
+      }
+
+      return {
+        ...prev,
+        [row.localId]: nextRowErrors,
+      };
+    });
 
     setActiveProductRowId(null);
     setEditingRowId((current) => current ?? row.localId);
@@ -1194,6 +1283,11 @@ export function SettlementManageScreen(): JSX.Element {
                     autoSaveRowKey === currentRowKey;
                   const rowLocked =
                     Boolean(row.id) && editingRowId !== row.localId;
+                  const validationErrors = rowValidationErrors[row.localId] ?? {};
+                  const invalidCellClassName =
+                    "bg-red-50/20 shadow-[inset_0_0_0_1px_#f87171]";
+                  const invalidInputClassName =
+                    "border border-red-500 bg-red-50 focus-visible:ring-1 focus-visible:ring-red-200";
                   const inputClassName = `h-8 border-0 px-1 shadow-none focus-visible:ring-0 ${
                     rowLocked
                       ? "cursor-not-allowed bg-slate-100 text-slate-500"
@@ -1223,11 +1317,20 @@ export function SettlementManageScreen(): JSX.Element {
                         />
                       </td>
 
-                      <td className="relative border border-slate-200 px-2 py-1">
+                      <td
+                        className={`relative border border-slate-200 px-2 py-1 ${
+                          validationErrors.productName ? invalidCellClassName : ""
+                        }`}
+                      >
                         <Input
-                          className={inputClassName}
+                          className={`${inputClassName} ${
+                            validationErrors.productName
+                              ? invalidInputClassName
+                              : ""
+                          }`}
                           data-rowid={row.localId}
                           value={row.productName}
+                          title={validationErrors.productName}
                           readOnly={rowLocked || rowBusy}
                           onFocus={() => {
                             if (!rowLocked) {
@@ -1277,11 +1380,20 @@ export function SettlementManageScreen(): JSX.Element {
                         ) : null}
                       </td>
 
-                      <td className="border border-slate-200 px-2 py-1">
+                      <td
+                        className={`border border-slate-200 px-2 py-1 ${
+                          validationErrors.productUnit ? invalidCellClassName : ""
+                        }`}
+                      >
                         <Input
-                          className={`${inputClassName} text-slate-600`}
+                          className={`${inputClassName} text-slate-600 ${
+                            validationErrors.productUnit
+                              ? invalidInputClassName
+                              : ""
+                          }`}
                           data-rowid={row.localId}
                           value={row.productUnit}
+                          title={validationErrors.productUnit}
                           readOnly={rowLocked || rowBusy}
                           onBlur={() => handleRowBlur(row.localId)}
                           onChange={(event) =>
@@ -1294,12 +1406,19 @@ export function SettlementManageScreen(): JSX.Element {
                         />
                       </td>
 
-                      <td className="border border-slate-200 px-2 py-1">
+                      <td
+                        className={`border border-slate-200 px-2 py-1 ${
+                          validationErrors.qty ? invalidCellClassName : ""
+                        }`}
+                      >
                         <Input
-                          className={`${inputClassName} text-right`}
+                          className={`${inputClassName} text-right ${
+                            validationErrors.qty ? invalidInputClassName : ""
+                          }`}
                           data-rowid={row.localId}
                           inputMode="decimal"
                           value={row.qty}
+                          title={validationErrors.qty}
                           readOnly={rowLocked || rowBusy}
                           onBlur={() => handleRowBlur(row.localId)}
                           onChange={(event) =>
@@ -1312,12 +1431,21 @@ export function SettlementManageScreen(): JSX.Element {
                         />
                       </td>
 
-                      <td className="border border-slate-200 px-2 py-1">
+                      <td
+                        className={`border border-slate-200 px-2 py-1 ${
+                          validationErrors.unitPrice ? invalidCellClassName : ""
+                        }`}
+                      >
                         <Input
-                          className={`${inputClassName} text-right`}
+                          className={`${inputClassName} text-right ${
+                            validationErrors.unitPrice
+                              ? invalidInputClassName
+                              : ""
+                          }`}
                           data-rowid={row.localId}
                           inputMode="decimal"
                           value={row.unitPrice}
+                          title={validationErrors.unitPrice}
                           readOnly={rowLocked || rowBusy}
                           onBlur={() => handleRowBlur(row.localId)}
                           onChange={(event) =>
