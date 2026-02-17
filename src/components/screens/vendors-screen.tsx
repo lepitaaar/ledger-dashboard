@@ -67,6 +67,7 @@ export function VendorsScreen(): JSX.Element {
   const [keyword, setKeyword] = useState("");
 
   const [changingId, setChangingId] = useState<string | null>(null);
+  const [editingVendor, setEditingVendor] = useState<VendorRow | null>(null);
 
   const setCreateModalOpen = useCallback(
     (open: boolean): void => {
@@ -135,6 +136,15 @@ export function VendorsScreen(): JSX.Element {
     setCreateModalOpen(false);
     await loadVendors({ page: 1, keyword: "" });
   }, [loadVendors, setCreateModalOpen]);
+
+  const handleEditModalClose = useCallback((): void => {
+    setEditingVendor(null);
+  }, []);
+
+  const handleEditSuccess = useCallback(async (): Promise<void> => {
+    setEditingVendor(null);
+    await loadVendors();
+  }, [loadVendors]);
 
   const handleStatusChange = async (
     vendor: VendorRow,
@@ -240,7 +250,7 @@ export function VendorsScreen(): JSX.Element {
                 <TableHead>전화번호</TableHead>
                 <TableHead className="text-right">이번 달 거래금액</TableHead>
                 <TableHead className="text-center">상태</TableHead>
-                <TableHead className="text-center">상세</TableHead>
+                <TableHead className="text-center">관리</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -293,12 +303,25 @@ export function VendorsScreen(): JSX.Element {
                         </span>
                       </label>
                     </TableCell>
-                    <TableCell className="text-center">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/dashboard/vendors/${item._id}`}>
-                          보기
-                        </Link>
-                      </Button>
+                    <TableCell
+                      className="text-center"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingVendor(item)}
+                        >
+                          수정
+                        </Button>
+                        <Button asChild variant="outline" size="sm">
+                          <Link href={`/dashboard/vendors/${item._id}`}>
+                            보기
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -354,6 +377,36 @@ export function VendorsScreen(): JSX.Element {
           <VendorCreateForm
             onSuccess={handleCreateSuccess}
             onCancel={handleCreateModalClose}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingVendor)}
+        onOpenChange={(open) => {
+          if (!open) {
+            handleEditModalClose();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>거래처 수정</DialogTitle>
+          </DialogHeader>
+          <VendorCreateForm
+            mode="edit"
+            initialValues={
+              editingVendor
+                ? {
+                    id: editingVendor._id,
+                    name: editingVendor.name,
+                    representativeName: editingVendor.representativeName,
+                    phone: editingVendor.phone,
+                  }
+                : null
+            }
+            onSuccess={handleEditSuccess}
+            onCancel={handleEditModalClose}
           />
         </DialogContent>
       </Dialog>
