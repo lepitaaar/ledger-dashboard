@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -32,30 +32,53 @@ const createVendorSchema = z.object({
 
 type CreateVendorValues = z.infer<typeof createVendorSchema>;
 
+type VendorFormMode = "create" | "edit";
+
+type VendorFormInitialValues = {
+  id: string;
+  name: string;
+  representativeName?: string;
+  phone?: string;
+};
+
 type VendorCreateFormProps = {
   onSuccess: () => void | Promise<void>;
   onCancel?: () => void;
   submitting?: boolean;
+  mode?: VendorFormMode;
+  initialValues?: VendorFormInitialValues | null;
 };
 
 export function VendorCreateForm({
   onSuccess,
   onCancel,
   submitting,
+  mode = "create",
+  initialValues = null,
 }: VendorCreateFormProps): JSX.Element {
   const [internalSubmitting, setInternalSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const isControlledSubmitting = submitting !== undefined;
   const isSubmitting = submitting ?? internalSubmitting;
+  const isEditMode = mode === "edit";
+  const formInitialValues = useMemo(
+    () => ({
+      name: initialValues?.name ?? "",
+      representativeName: initialValues?.representativeName ?? "",
+      phone: initialValues?.phone ?? "",
+    }),
+    [initialValues?.name, initialValues?.phone, initialValues?.representativeName],
+  );
 
   const form = useForm<CreateVendorValues>({
     resolver: zodResolver(createVendorSchema),
-    defaultValues: {
-      name: "",
-      representativeName: "",
-      phone: "",
-    },
+    defaultValues: formInitialValues,
   });
+
+  useEffect(() => {
+    form.reset(formInitialValues);
+    setSubmitError(null);
+  }, [form, formInitialValues]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitError(null);
@@ -65,16 +88,70 @@ export function VendorCreateForm({
     }
 
     try {
-      await fetchJson<{ data: unknown }>("/api/vendors", {
-        method: "POST",
-        body: JSON.stringify(values),
-      });
+      if (isEditMode) {
+        if (!initialValues?.id) {
+          throw new Error("수정할 거래처 정보가 없습니다.");
+        }
 
-      form.reset();
+        const payload: {
+          id: string;
+          name?: string;
+          representativeName?: string;
+          phone?: string;
+        } = { id: initialValues.id };
+
+        const initialName = initialValues.name.trim();
+        const initialRepresentativeName =
+          initialValues.representativeName?.trim() || undefined;
+        const initialPhone = initialValues.phone?.trim() || undefined;
+
+        if (values.name !== initialName) {
+          payload.name = values.name;
+        }
+
+        if (
+          values.representativeName !== undefined &&
+          values.representativeName !== initialRepresentativeName
+        ) {
+          payload.representativeName = values.representativeName;
+        }
+
+        if (values.phone !== undefined && values.phone !== initialPhone) {
+          payload.phone = values.phone;
+        }
+
+        const hasChanges =
+          payload.name !== undefined ||
+          payload.representativeName !== undefined ||
+          payload.phone !== undefined;
+
+        if (hasChanges) {
+          await fetchJson<{ data: unknown }>("/api/vendors", {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          });
+        }
+      } else {
+        await fetchJson<{ data: unknown }>("/api/vendors", {
+          method: "POST",
+          body: JSON.stringify(values),
+        });
+
+        form.reset({
+          name: "",
+          representativeName: "",
+          phone: "",
+        });
+      }
+
       await onSuccess();
     } catch (submitError) {
       setSubmitError(
-        submitError instanceof Error ? submitError.message : "거래처 등록 실패",
+        submitError instanceof Error
+          ? submitError.message
+          : isEditMode
+            ? "거래처 수정 실패"
+            : "거래처 등록 실패",
       );
     } finally {
       if (!isControlledSubmitting) {
@@ -85,7 +162,11 @@ export function VendorCreateForm({
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
-      <p className="text-sm text-slate-500">새로운 거래처 정보를 입력하여 등록해주세요.</p>
+      <p className="text-sm text-slate-500">
+        {isEditMode
+          ? "거래처 정보를 수정하고 저장해주세요."
+          : "새로운 거래처 정보를 입력하여 등록해주세요."}
+      </p>
 
       <div className="space-y-4">
         <div className="space-y-1">
@@ -131,7 +212,7 @@ export function VendorCreateForm({
           </Button>
         ) : null}
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "저장중..." : "저장"}
+          {isSubmitting ? "저장중..." : isEditMode ? "수정 저장" : "저장"}
         </Button>
       </DialogFooter>
     </form>
