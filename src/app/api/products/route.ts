@@ -59,7 +59,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const [products, total] = await Promise.all([
       ProductModel.find(filter)
-        .sort({ createdAt: -1 })
+        .sort({ name: 1 })
         .skip(skip)
         .limit(limit)
         .lean<ProductRow[]>(),

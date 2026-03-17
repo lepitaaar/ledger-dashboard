@@ -76,7 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const [vendors, total, activeCount] = await Promise.all([
-      VendorModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean<VendorRow[]>(),
+      VendorModel.find(filter).sort({ name: 1 }).skip(skip).limit(limit).lean<VendorRow[]>(),
       VendorModel.countDocuments(filter),
       VendorModel.countDocuments({ ...filter, isActive: true })
     ]);
