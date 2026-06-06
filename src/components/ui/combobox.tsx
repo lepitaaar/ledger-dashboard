@@ -29,6 +29,7 @@ interface ComboboxProps<T> {
   emptyMessage?: string
   className?: string
   disabled?: boolean
+  allowCustomValue?: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,12 +43,40 @@ export function Combobox<T extends Record<string, any>>({
   emptyMessage = "검색 결과가 없습니다.",
   className,
   disabled,
+  allowCustomValue = false,
 }: ComboboxProps<T>) {
   const [open, setOpen] = React.useState(false)
+  const [searchValue, setSearchValue] = React.useState("")
+
+  React.useEffect(() => {
+    if (!open) {
+      setSearchValue("")
+    }
+  }, [open])
 
   const selectedOption = React.useMemo(() => {
     return options.find((option) => String(option[valueKey]) === value)
   }, [options, value, valueKey])
+
+  const displayLabel = React.useMemo(() => {
+    if (selectedOption) {
+      return String(selectedOption[displayKey])
+    }
+    if (allowCustomValue && value) {
+      return value
+    }
+    return placeholder
+  }, [selectedOption, allowCustomValue, value, displayKey, placeholder])
+
+  const showCustomOption = React.useMemo(() => {
+    if (!allowCustomValue || !searchValue.trim()) {
+      return false
+    }
+    const hasExactMatch = options.some(
+      (option) => String(option[displayKey]).toLowerCase() === searchValue.trim().toLowerCase()
+    )
+    return !hasExactMatch
+  }, [allowCustomValue, searchValue, options, displayKey])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -61,15 +90,37 @@ export function Combobox<T extends Record<string, any>>({
           className={cn("w-full justify-between font-normal text-slate-700 h-10 px-3", className)}
         >
           <span className="truncate">
-            {selectedOption ? String(selectedOption[displayKey]) : placeholder}
+            {displayLabel}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
         <Command>
-          <CommandInput placeholder={`${placeholder} 검색...`} />
+          <CommandInput
+            placeholder={`${placeholder} 검색...`}
+            value={searchValue}
+            onValueChange={setSearchValue}
+          />
           <CommandList>
+            {showCustomOption && (
+              <CommandGroup heading="직접 입력">
+                <CommandItem
+                  value={searchValue.trim()}
+                  onSelect={() => {
+                    const customOption = {
+                      [valueKey]: searchValue.trim(),
+                      [displayKey]: searchValue.trim(),
+                    } as unknown as T
+                    onSelect(customOption)
+                    setOpen(false)
+                  }}
+                  className="font-medium text-blue-600 cursor-pointer"
+                >
+                  <span className="truncate">&ldquo;{searchValue.trim()}&rdquo; 품목으로 추가</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => {

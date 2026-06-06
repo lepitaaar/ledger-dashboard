@@ -94,6 +94,7 @@ export function SettlementRowEditor({
           displayKey="name"
           valueKey="name"
           disabled={rowLocked || rowBusy}
+          allowCustomValue
           className="h-8 border-0 shadow-none bg-transparent hover:bg-blue-50/50"
         />
       </td>

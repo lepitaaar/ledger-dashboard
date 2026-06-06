@@ -20,7 +20,16 @@ import {
 import { toast } from "sonner";
 import { Pagination } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -58,13 +67,12 @@ export function VendorsScreen(): JSX.Element {
   const [page, setPage] = useState(1);
   const limit = 20;
   const [total, setTotal] = useState(0);
-  const [activeCount, setActiveCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
 
-  const [changingId, setChangingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingVendor, setEditingVendor] = useState<VendorRow | null>(null);
   const isUpsertModalOpen = isCreateModalOpen || Boolean(editingVendor);
   const upsertMode = editingVendor ? "edit" : "create";
@@ -111,7 +119,6 @@ export function VendorsScreen(): JSX.Element {
         const response = await fetchJson<VendorListResponse>(`/api/vendors?${query}`);
         setItems(response.data);
         setTotal(response.meta.total);
-        setActiveCount(response.meta.activeCount);
         setTotalPages(response.meta.totalPages);
       } catch (loadError) {
         setError(
@@ -188,34 +195,30 @@ export function VendorsScreen(): JSX.Element {
     await handleCreateSuccess();
   }, [editingVendor, handleCreateSuccess, handleEditSuccess]);
 
-  const handleStatusChange = async (
-    vendor: VendorRow,
-    nextActive: boolean,
-  ): Promise<void> => {
-    setChangingId(vendor._id);
+  const handleDeleteClick = (id: string): void => {
+    setDeletingId(id);
+  };
 
+  const confirmDelete = async (id: string): Promise<void> => {
     try {
       await fetchJson<{ data: unknown }>("/api/vendors", {
-        method: "PATCH",
-        body: JSON.stringify({
-          id: vendor._id,
-          isActive: nextActive,
-        }),
+        method: "DELETE",
+        body: JSON.stringify({ id }),
       });
-
       await loadVendors();
-    } catch (statusError) {
+      toast.success("거래처가 삭제되었습니다.");
+    } catch (deleteError) {
       toast.error(
-        statusError instanceof Error ? statusError.message : "상태 변경 실패",
+        deleteError instanceof Error ? deleteError.message : "삭제 실패",
       );
     } finally {
-      setChangingId(null);
+      setDeletingId(null);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-1">
         <Card>
           <CardContent className="flex items-center justify-between p-6">
             <div>
@@ -226,19 +229,6 @@ export function VendorsScreen(): JSX.Element {
             </div>
             <div className="rounded-full bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-700">
               VENDORS
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-sm text-slate-500">거래 중</p>
-              <p className="mt-1 text-2xl font-bold text-green-600">
-                {formatCurrency(activeCount)}개
-              </p>
-            </div>
-            <div className="rounded-full bg-green-100 px-4 py-3 text-sm font-semibold text-green-700">
-              ACTIVE
             </div>
           </CardContent>
         </Card>
@@ -289,7 +279,6 @@ export function VendorsScreen(): JSX.Element {
               <TableRow>
                 <TableHead>업체명</TableHead>
                 <TableHead className="text-right">이번 달 거래금액</TableHead>
-                <TableHead className="text-center">상태</TableHead>
                 <TableHead className="text-center">관리</TableHead>
               </TableRow>
             </TableHeader>
@@ -299,7 +288,6 @@ export function VendorsScreen(): JSX.Element {
                   <TableRow key={index}>
                     <TableCell><Skeleton className="h-6 w-32" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="h-6 w-20 ml-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
                     <TableCell><Skeleton className="h-6 w-20 mx-auto" /></TableCell>
                   </TableRow>
                 ))
@@ -320,27 +308,6 @@ export function VendorsScreen(): JSX.Element {
                     </TableCell>
                     <TableCell
                       className="text-center"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <Switch
-                          checked={item.isActive}
-                          disabled={changingId === item._id}
-                          onCheckedChange={(checked) =>
-                            void handleStatusChange(item, checked)
-                          }
-                        />
-                        <span
-                          className={
-                            item.isActive ? "text-green-600 text-sm font-medium" : "text-slate-500 text-sm font-medium"
-                          }
-                        >
-                          {item.isActive ? "거래중" : "중지"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className="text-center"
                       onClick={(event) => event.stopPropagation()}
                     >
                       <div className="flex items-center justify-center gap-2">
@@ -357,6 +324,14 @@ export function VendorsScreen(): JSX.Element {
                             보기
                           </Link>
                         </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteClick(item._id)}
+                        >
+                          삭제
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -364,7 +339,7 @@ export function VendorsScreen(): JSX.Element {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={3}
                     className="h-24 text-center text-slate-500"
                   >
                     등록된 거래처가 없습니다.
@@ -394,6 +369,21 @@ export function VendorsScreen(): JSX.Element {
         onOpenChange={handleUpsertModalOpenChange}
         onSuccess={handleUpsertSuccess}
       />
+
+      <AlertDialog open={Boolean(deletingId)} onOpenChange={(open) => !open && setDeletingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>거래처 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              해당 거래처를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deletingId && void confirmDelete(deletingId)}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

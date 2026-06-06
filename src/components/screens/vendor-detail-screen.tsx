@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pagination } from "@/components/ui/pagination";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { getTodayDateKey } from "@/lib/kst";
@@ -85,6 +96,28 @@ export function VendorDetailScreen({
   const [paymentDateKey, setPaymentDateKey] = useState(getTodayDateKey());
   const [paymentAmount, setPaymentAmount] = useState("");
   const [savingPayment, setSavingPayment] = useState(false);
+
+  const router = useRouter();
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async (): Promise<void> => {
+    setDeleting(true);
+    try {
+      await fetchJson<{ data: unknown }>("/api/vendors", {
+        method: "DELETE",
+        body: JSON.stringify({ id: vendorId }),
+      });
+      toast.success("거래처가 삭제되었습니다.");
+      router.push("/dashboard/vendors");
+    } catch (deleteError) {
+      toast.error(
+        deleteError instanceof Error ? deleteError.message : "삭제 실패",
+      );
+      setDeleting(false);
+      setIsConfirmOpen(false);
+    }
+  };
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -180,9 +213,14 @@ export function VendorDetailScreen({
               <CardTitle className="text-xl">{data.vendor.name}</CardTitle>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant={data.vendor.isActive ? "default" : "secondary"}>
-                {data.vendor.isActive ? "거래중" : "거래중지"}
-              </Badge>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => setIsConfirmOpen(true)}
+              >
+                거래처 삭제
+              </Button>
               <Button asChild variant="outline" size="sm">
                 <Link href="/dashboard/vendors">목록으로</Link>
               </Button>
@@ -313,6 +351,30 @@ export function VendorDetailScreen({
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
+
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>거래처 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              해당 거래처를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+              disabled={deleting}
+            >
+              {deleting ? "삭제 중..." : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
