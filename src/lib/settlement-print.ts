@@ -263,20 +263,6 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
           </tbody>
         </table>
 
-        <div class="footer-grid">
-          <table class="note-table">
-            <tbody>
-              <tr><th>비고</th><td></td></tr>
-              <tr><th></th><td></td></tr>
-            </tbody>
-          </table>
-          <table class="total-table">
-            <tbody>
-              <tr><th>합 계 금 액</th><td>${totalAmountText}</td></tr>
-              <tr><th>총 계 금 액</th><td>${totalAmountText}</td></tr>
-            </tbody>
-          </table>
-        </div>
 
         <div class="account-line">${escapeHtml(input.supplier.accountText)}</div>
       </section>`;
@@ -410,6 +396,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
 
       .supplier-table {
         margin-left: -0.35mm;
+        width: calc(100% + 0.35mm);
       }
 
       .supplier-table .supplier-title {
@@ -490,42 +477,6 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       .number {
         text-align: right;
         padding-right: 1.2mm;
-      }
-
-      .footer-grid {
-        display: grid;
-        grid-template-columns: 59% 41%;
-        margin-top: 1.2mm;
-      }
-
-      .footer-grid table {
-        height: 12mm;
-      }
-
-      .note-table {
-        border-right: 0;
-      }
-
-      .note-table th {
-        width: 18%;
-        text-align: left;
-      }
-
-      .total-table {
-        margin-left: -0.35mm;
-      }
-
-      .total-table th {
-        width: 53%;
-        background: #dbeef3;
-        font-size: 9pt;
-      }
-
-      .total-table td {
-        text-align: right;
-        padding-right: 4mm;
-        font-size: 9.5pt;
-        font-weight: 700;
       }
 
       .account-line {

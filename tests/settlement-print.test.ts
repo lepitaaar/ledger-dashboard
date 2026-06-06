@@ -48,12 +48,10 @@ describe("buildSettlementPrintHtml", () => {
     expect(html).toContain("2026년 6월 6일");
     expect(html).toContain("테스트 상호");
     expect(html).toContain("오만오천");
-    expect(html.match(/55,000/g)?.length).toBe(4);
+    expect(html.match(/55,000/g)?.length).toBe(2);
     expect(html).toContain("6/6");
     expect(html).toContain("대파");
     expect(html).toContain("10kg");
-    expect(html).toContain("합 계 금 액");
-    expect(html).toContain("총 계 금 액");
     expect(html).toContain("width: 138mm");
     expect(html).toContain("height: 198mm");
     expect(html).not.toContain("min-height: 202mm");
