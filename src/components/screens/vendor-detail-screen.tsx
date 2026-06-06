@@ -16,6 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Pagination } from "@/components/ui/pagination";
+import { toast } from "sonner";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { getTodayDateKey } from "@/lib/kst";
 import { formatCurrency } from "@/lib/utils";
@@ -115,7 +119,7 @@ export function VendorDetailScreen({
   const submitPayment = async (): Promise<void> => {
     const amount = Number(paymentAmount.replace(/,/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
-      alert("입금액은 0보다 큰 숫자여야 합니다.");
+      toast.error("입금액은 0보다 큰 숫자여야 합니다.");
       return;
     }
 
@@ -134,7 +138,7 @@ export function VendorDetailScreen({
       setPage(1);
       await loadDetail();
     } catch (submitError) {
-      alert(
+      toast.error(
         submitError instanceof Error
           ? submitError.message
           : "입금 기록 저장 실패",
@@ -145,7 +149,18 @@ export function VendorDetailScreen({
   };
 
   if (loading && !data) {
-    return <p className="text-sm text-slate-500">불러오는 중...</p>;
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-24 w-full" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-60 w-full" />
+      </div>
+    );
   }
 
   if (error && !data) {
@@ -163,21 +178,11 @@ export function VendorDetailScreen({
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle className="text-xl">{data.vendor.name}</CardTitle>
-              <p className="mt-1 text-sm text-slate-500">
-                대표자: {data.vendor.representativeName} | 전화번호:{" "}
-                {data.vendor.phone}
-              </p>
             </div>
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded px-2 py-1 text-xs font-semibold ${
-                  data.vendor.isActive
-                    ? "bg-green-100 text-green-700"
-                    : "bg-slate-200 text-slate-600"
-                }`}
-              >
+              <Badge variant={data.vendor.isActive ? "default" : "secondary"}>
                 {data.vendor.isActive ? "거래중" : "거래중지"}
-              </span>
+              </Badge>
               <Button asChild variant="outline" size="sm">
                 <Link href="/dashboard/vendors">목록으로</Link>
               </Button>
@@ -277,15 +282,9 @@ export function VendorDetailScreen({
                   <TableRow key={row.id}>
                     <TableCell>{row.dateKey}</TableCell>
                     <TableCell className="text-center">
-                      <span
-                        className={`rounded px-2 py-1 text-xs font-semibold ${
-                          row.type === "매출"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
+                      <Badge variant={row.type === "매출" ? "destructive" : "secondary"}>
                         {row.type}
-                      </span>
+                      </Badge>
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium ${row.amount < 0 ? "text-red-600" : "text-slate-900"}`}
@@ -311,27 +310,7 @@ export function VendorDetailScreen({
             </TableBody>
           </Table>
 
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((prev) => prev - 1)}
-            >
-              이전
-            </Button>
-            <span className="text-sm text-slate-600">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => prev + 1)}
-            >
-              다음
-            </Button>
-          </div>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
     </div>

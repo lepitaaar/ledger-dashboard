@@ -16,6 +16,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
 import { buildQueryString, fetchJson } from "@/lib/client";
 
 type ProductRow = {
@@ -53,6 +66,7 @@ export function ProductsScreen(): JSX.Element {
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const isUpsertModalOpen = isCreateModalOpen || Boolean(editingProduct);
   const upsertMode = editingProduct ? "edit" : "create";
 
@@ -163,19 +177,22 @@ export function ProductsScreen(): JSX.Element {
     await handleCreateSuccess();
   }, [editingProduct, handleCreateSuccess, handleEditSuccess]);
 
-  const handleDelete = async (id: string): Promise<void> => {
-    if (!window.confirm("해당 상품을 삭제하시겠습니까?")) {
-      return;
-    }
+  const handleDelete = (id: string): void => {
+    setDeletingId(id);
+  };
 
+  const confirmDelete = async (id: string): Promise<void> => {
     try {
       await fetchJson<{ data: unknown }>("/api/products", {
         method: "DELETE",
         body: JSON.stringify({ id }),
       });
       await loadProducts();
+      toast.success("상품이 삭제되었습니다.");
     } catch (deleteError) {
-      alert(deleteError instanceof Error ? deleteError.message : "삭제 실패");
+      toast.error(deleteError instanceof Error ? deleteError.message : "삭제 실패");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -230,14 +247,14 @@ export function ProductsScreen(): JSX.Element {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="h-24 text-center text-slate-500"
-                  >
-                    불러오는 중...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-20 mx-auto" /></TableCell>
+                  </TableRow>
+                ))
               ) : items.length ? (
                 items.map((item) => (
                   <TableRow key={item._id}>
@@ -286,27 +303,7 @@ export function ProductsScreen(): JSX.Element {
 
           <div className="flex items-center justify-between pt-1 text-xs text-slate-500">
             <span>총 {total}개의 상품이 등록되어 있습니다.</span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((prev) => prev - 1)}
-              >
-                이전
-              </Button>
-              <span className="text-sm text-slate-600">
-                {page} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((prev) => prev + 1)}
-              >
-                다음
-              </Button>
-            </div>
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         </CardContent>
       </Card>
@@ -326,6 +323,21 @@ export function ProductsScreen(): JSX.Element {
         onOpenChange={handleUpsertModalOpenChange}
         onSuccess={handleUpsertSuccess}
       />
+
+      <AlertDialog open={Boolean(deletingId)} onOpenChange={(open) => !open && setDeletingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>상품 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              해당 상품을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deletingId && void confirmDelete(deletingId)}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

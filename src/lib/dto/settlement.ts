@@ -96,8 +96,17 @@ export const settlementExportQuerySchema = z.object({
   dateKey: dateKeySchema
 });
 
+export const settlementBulkSchema = z.object({
+  action: z.enum(['delete', 'return']),
+  transactionIds: z
+    .array(objectIdSchema)
+    .min(1, '최소 1개 이상의 ID가 필요합니다.')
+    .max(100, '최대 100개까지 처리할 수 있습니다.')
+});
+
 export type SettlementIssueInput = z.infer<typeof settlementIssueSchema>;
 export type SettlementListQuery = z.infer<typeof settlementListQuerySchema>;
 export type SettlementManageQuery = z.infer<typeof settlementManageQuerySchema>;
 export type SettlementLineCreateInput = z.infer<typeof settlementLineCreateSchema>;
 export type SettlementLineUpdateInput = z.infer<typeof settlementLineUpdateSchema>;
+export type SettlementBulkInput = z.infer<typeof settlementBulkSchema>;

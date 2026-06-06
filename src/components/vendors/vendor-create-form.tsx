@@ -8,7 +8,14 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { fetchJson } from "@/lib/client";
 
 const createVendorSchema = z.object({
@@ -161,60 +168,80 @@ export function VendorCreateForm({
   });
 
   return (
-    <form className="space-y-5" onSubmit={onSubmit}>
-      <p className="text-sm text-slate-500">
-        {isEditMode
-          ? "거래처 정보를 수정하고 저장해주세요."
-          : "새로운 거래처 정보를 입력하여 등록해주세요."}
-      </p>
-
-      <div className="space-y-4">
-        <div className="space-y-1">
-          <Label htmlFor="name">업체명 *</Label>
-          <Input id="name" placeholder="업체명을 입력하세요" {...form.register("name")} />
-          <p className="text-xs text-red-600">{form.formState.errors.name?.message}</p>
-        </div>
-
-        <div className="space-y-1">
-          <Label htmlFor="representativeName">대표자명</Label>
-          <Input
-            id="representativeName"
-            placeholder="대표자 성함을 입력하세요"
-            {...form.register("representativeName")}
-          />
-          <p className="text-xs text-red-600">
-            {form.formState.errors.representativeName?.message}
-          </p>
-        </div>
-
-        <div className="space-y-1">
-          <Label htmlFor="phone">전화번호</Label>
-          <Input id="phone" placeholder="010-0000-0000" {...form.register("phone")} />
-          <p className="text-xs text-red-600">{form.formState.errors.phone?.message}</p>
-        </div>
-      </div>
-
-      {submitError ? (
-        <p className="text-sm text-red-600" role="alert">
-          {submitError}
+    <Form {...form}>
+      <form className="space-y-5" onSubmit={onSubmit}>
+        <p className="text-sm text-slate-500">
+          {isEditMode
+            ? "거래처 정보를 수정하고 저장해주세요."
+            : "새로운 거래처 정보를 입력하여 등록해주세요."}
         </p>
-      ) : null}
 
-      <DialogFooter>
-        {onCancel ? (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            취소
-          </Button>
+        <div className="space-y-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>업체명 *</FormLabel>
+                <FormControl>
+                  <Input placeholder="업체명을 입력하세요" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="representativeName"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>대표자명</FormLabel>
+                <FormControl>
+                  <Input placeholder="대표자 성함을 입력하세요" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="phone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>전화번호</FormLabel>
+                <FormControl>
+                  <Input placeholder="010-0000-0000" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        {submitError ? (
+          <p className="text-sm text-red-600" role="alert">
+            {submitError}
+          </p>
         ) : null}
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "저장중..." : isEditMode ? "수정 저장" : "저장"}
-        </Button>
-      </DialogFooter>
-    </form>
+
+        <DialogFooter>
+          {onCancel ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onCancel}
+              disabled={isSubmitting}
+            >
+              취소
+            </Button>
+          ) : null}
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "저장중..." : isEditMode ? "수정 저장" : "저장"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Form>
   );
 }

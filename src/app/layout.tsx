@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Toaster } from '@/components/ui/sonner';
 
 import '@/app/globals.css';
 
@@ -14,7 +15,10 @@ export default function RootLayout({
 }>): JSX.Element {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

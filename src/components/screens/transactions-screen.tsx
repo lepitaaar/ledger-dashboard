@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Combobox } from "@/components/ui/combobox";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { DATE_KEY_FORMAT, KST_ZONE, getTodayDateKey } from "@/lib/kst";
 import { formatCurrency } from "@/lib/utils";
@@ -168,6 +172,20 @@ export function TransactionsScreen({
   );
   const skipInitialTransactionsLoadRef = useRef(Boolean(initialMeta));
 
+  const vendorOptions = useMemo(() => {
+    return [
+      { value: "", label: "전체 업체명" },
+      ...vendors.map(v => ({ value: v._id, label: v.name }))
+    ];
+  }, [vendors]);
+
+  const productOptions = useMemo(() => {
+    return [
+      { value: "", label: "전체 상품명" },
+      ...products.map(p => ({ value: p.name, label: p.name }))
+    ];
+  }, [products]);
+
   const effectiveRange = useMemo(
     () => normalizeRange(startKey, endKey),
     [startKey, endKey],
@@ -183,7 +201,7 @@ export function TransactionsScreen({
       setVendors(vendorRes.data);
       setProducts(productRes.data);
     } catch (metaError) {
-      alert(
+      toast.error(
         metaError instanceof Error
           ? metaError.message
           : "필터 데이터 조회 실패",
@@ -307,7 +325,7 @@ export function TransactionsScreen({
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (downloadError) {
-      alert(
+      toast.error(
         downloadError instanceof Error
           ? downloadError.message
           : "엑셀 다운로드 실패",
@@ -336,38 +354,30 @@ export function TransactionsScreen({
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[180px_180px_1fr_120px]">
-            <select
-              className="h-10 rounded-md border border-border bg-white px-3 text-sm"
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[200px_200px_1fr_120px]">
+            <Combobox
+              options={vendorOptions}
               value={vendorFilter}
-              onChange={(event) => {
-                setVendorFilter(event.target.value);
+              onSelect={(option) => {
+                setVendorFilter(option.value);
                 setPage(1);
               }}
-            >
-              <option value="">전체 업체명</option>
-              {vendors.map((vendor) => (
-                <option key={vendor._id} value={vendor._id}>
-                  {vendor.name}
-                </option>
-              ))}
-            </select>
+              placeholder="업체 검색..."
+              displayKey="label"
+              valueKey="value"
+            />
 
-            <select
-              className="h-10 rounded-md border border-border bg-white px-3 text-sm"
+            <Combobox
+              options={productOptions}
               value={productFilter}
-              onChange={(event) => {
-                setProductFilter(event.target.value);
+              onSelect={(option) => {
+                setProductFilter(option.value);
                 setPage(1);
               }}
-            >
-              <option value="">전체 상품명</option>
-              {products.map((product) => (
-                <option key={product._id} value={product.name}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
+              placeholder="상품 검색..."
+              displayKey="label"
+              valueKey="value"
+            />
 
             <Input
               placeholder="검색어를 입력하세요 (상품명, 업체명 등)"
@@ -472,14 +482,17 @@ export function TransactionsScreen({
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="h-24 border border-slate-200 text-center text-slate-500"
-                    >
-                      불러오는 중...
-                    </td>
-                  </tr>
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <tr key={index}>
+                      <td className="border border-slate-200 px-3 py-2"><Skeleton className="h-5 w-24" /></td>
+                      <td className="border border-slate-200 px-3 py-2"><Skeleton className="h-5 w-32" /></td>
+                      <td className="border border-slate-200 px-3 py-2"><Skeleton className="h-5 w-40" /></td>
+                      <td className="border border-slate-200 px-3 py-2 text-right"><Skeleton className="h-5 w-16 ml-auto" /></td>
+                      <td className="border border-slate-200 px-3 py-2 text-center"><Skeleton className="h-5 w-12 mx-auto" /></td>
+                      <td className="border border-slate-200 px-3 py-2 text-right"><Skeleton className="h-5 w-20 ml-auto" /></td>
+                      <td className="border border-slate-200 px-3 py-2"><Skeleton className="h-5 w-28" /></td>
+                    </tr>
+                  ))
                 ) : rows.length ? (
                   rows.map((row) => (
                     <tr key={row._id} className="hover:bg-slate-50">
@@ -544,26 +557,8 @@ export function TransactionsScreen({
             </table>
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-            >
-              이전
-            </Button>
-            <span className="text-sm text-slate-600">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => prev + 1)}
-            >
-              다음
-            </Button>
+          <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </div>
         </CardContent>
       </Card>

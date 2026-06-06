@@ -17,6 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { toast } from "sonner";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -201,7 +205,7 @@ export function VendorsScreen(): JSX.Element {
 
       await loadVendors();
     } catch (statusError) {
-      alert(
+      toast.error(
         statusError instanceof Error ? statusError.message : "상태 변경 실패",
       );
     } finally {
@@ -247,7 +251,7 @@ export function VendorsScreen(): JSX.Element {
             <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
               <div className="flex w-full gap-2 md:w-[360px]">
                 <Input
-                  placeholder="업체명/대표자명/전화번호 검색"
+                  placeholder="업체명 검색"
                   value={keywordInput}
                   onChange={(event) => setKeywordInput(event.target.value)}
                   onKeyDown={(event) => {
@@ -284,8 +288,6 @@ export function VendorsScreen(): JSX.Element {
             <TableHeader>
               <TableRow>
                 <TableHead>업체명</TableHead>
-                <TableHead>대표자명</TableHead>
-                <TableHead>전화번호</TableHead>
                 <TableHead className="text-right">이번 달 거래금액</TableHead>
                 <TableHead className="text-center">상태</TableHead>
                 <TableHead className="text-center">관리</TableHead>
@@ -293,14 +295,14 @@ export function VendorsScreen(): JSX.Element {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-24 text-center text-slate-500"
-                  >
-                    불러오는 중...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell><Skeleton className="h-6 w-32" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="h-6 w-20 ml-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-12 mx-auto" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-20 mx-auto" /></TableCell>
+                  </TableRow>
+                ))
               ) : items.length ? (
                 items.map((item) => (
                   <TableRow
@@ -313,8 +315,6 @@ export function VendorsScreen(): JSX.Element {
                     <TableCell className="font-medium text-primary">
                       {item.name}
                     </TableCell>
-                    <TableCell>{item.representativeName}</TableCell>
-                    <TableCell>{item.phone}</TableCell>
                     <TableCell className="text-right font-medium text-slate-900">
                       {formatCurrency(item.thisMonthAmount)}
                     </TableCell>
@@ -322,24 +322,22 @@ export function VendorsScreen(): JSX.Element {
                       className="text-center"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4"
+                      <div className="flex items-center justify-center gap-2">
+                        <Switch
                           checked={item.isActive}
                           disabled={changingId === item._id}
-                          onChange={(event) =>
-                            void handleStatusChange(item, event.target.checked)
+                          onCheckedChange={(checked) =>
+                            void handleStatusChange(item, checked)
                           }
                         />
                         <span
                           className={
-                            item.isActive ? "text-green-600" : "text-slate-500"
+                            item.isActive ? "text-green-600 text-sm font-medium" : "text-slate-500 text-sm font-medium"
                           }
                         >
                           {item.isActive ? "거래중" : "중지"}
                         </span>
-                      </label>
+                      </div>
                     </TableCell>
                     <TableCell
                       className="text-center"
@@ -366,7 +364,7 @@ export function VendorsScreen(): JSX.Element {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={4}
                     className="h-24 text-center text-slate-500"
                   >
                     등록된 거래처가 없습니다.
@@ -376,27 +374,7 @@ export function VendorsScreen(): JSX.Element {
             </TableBody>
           </Table>
 
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((prev) => prev - 1)}
-            >
-              이전
-            </Button>
-            <span className="text-sm text-slate-600">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((prev) => prev + 1)}
-            >
-              다음
-            </Button>
-          </div>
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </CardContent>
       </Card>
 

@@ -1,1296 +1,148 @@
 "use client";
 
-import { DatePicker } from "@/components/ui/date-picker";
-
-import {
-  AlertCircle,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  FileSpreadsheet,
-  Loader2,
-  Pencil,
-  Plus,
-  Printer,
-  RotateCcw,
-  Search,
-  Trash2,
-} from "lucide-react";
-import { DateTime } from "luxon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-
+import { useSettlementManage } from "@/components/settlements/use-settlement-manage";
+import { SettlementToolbar } from "@/components/settlements/settlement-toolbar";
+import { SettlementTable } from "@/components/settlements/settlement-table";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { buildQueryString, fetchJson } from "@/lib/client";
+import { Loader2, Trash2, RotateCcw } from "lucide-react";
 import {
-  DATE_KEY_FORMAT,
-  KST_ZONE,
-  getTodayDateKey,
-  parseDateKeyKst,
-} from "@/lib/kst";
-import {
-  buildSettlementPrintHtml,
-  type SettlementPrintItem,
-  type SettlementPrintSupplier,
-} from "@/lib/settlement-print";
-import { formatCurrency } from "@/lib/utils";
-
-type VendorOption = {
-  _id: string;
-  name: string;
-};
-
-type ProductOption = {
-  _id: string;
-  name: string;
-  unit?: string;
-  vendorId?: string | null;
-  createdAt?: string;
-};
-
-type VendorListResponse = {
-  data: VendorOption[];
-};
-
-type ProductListResponse = {
-  data: ProductOption[];
-};
-
-type SettlementManageRowResponse = {
-  _id: string;
-  productName: string;
-  productUnit: string;
-  qty: number;
-  unitPrice: number;
-  amount: number;
-  registeredTimeKST: string;
-};
-
-type SettlementManageResponse = {
-  data: {
-    vendor: {
-      _id: string;
-      name: string;
-    };
-    dateKey: string;
-    rows: SettlementManageRowResponse[];
-    totalAmount: number;
-  };
-};
-
-type EditableRow = {
-  localId: string;
-  id?: string;
-  selected: boolean;
-  productName: string;
-  productUnit: string;
-  qty: string;
-  unitPrice: string;
-  registeredTimeKST: string;
-};
-
-type EditableField =
-  | "selected"
-  | "productName"
-  | "productUnit"
-  | "qty"
-  | "unitPrice";
-
-type EditableValueField = Exclude<EditableField, "selected">;
-
-type PersistableRowPayload = {
-  productName: string;
-  productUnit?: string;
-  qty: number;
-  unitPrice: number;
-};
-
-type SavedRowSnapshot = {
-  productName: string;
-  productUnit: string;
-  qty: number;
-  unitPrice: number;
-};
-
-type RowValidationErrors = Partial<Record<EditableValueField, string>>;
-
-const MIN_BASE_ROWS = 15;
-
-type PrintConfigResponse = {
-  data: SettlementPrintSupplier;
-};
-
-type AutoSaveState = "idle" | "saving" | "saved" | "error";
-
-function createLocalId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function createEmptyRow(): EditableRow {
-  return {
-    localId: createLocalId(),
-    selected: false,
-    productName: "",
-    productUnit: "",
-    qty: "",
-    unitPrice: "",
-    registeredTimeKST: "",
-  };
-}
-
-function ensureBaseRows(rows: EditableRow[]): EditableRow[] {
-  if (rows.length >= MIN_BASE_ROWS) {
-    return rows;
-  }
-
-  const appended = [...rows];
-  while (appended.length < MIN_BASE_ROWS) {
-    appended.push(createEmptyRow());
-  }
-  return appended;
-}
-
-function mapApiRowToEditable(row: SettlementManageRowResponse): EditableRow {
-  return {
-    localId: row._id,
-    id: row._id,
-    selected: false,
-    productName: row.productName,
-    productUnit: row.productUnit ?? "",
-    qty: String(row.qty),
-    unitPrice: String(row.unitPrice),
-    registeredTimeKST: row.registeredTimeKST,
-  };
-}
-
-function parseNumber(value: string): number {
-  const normalized = value.replace(/,/g, "").trim();
-  if (normalized === "") {
-    return Number.NaN;
-  }
-  return Number(normalized);
-}
-
-function calcRowAmount(row: EditableRow): number {
-  const qty = parseNumber(row.qty);
-  const unitPrice = parseNumber(row.unitPrice);
-
-  if (!Number.isFinite(qty) || !Number.isFinite(unitPrice)) {
-    return 0;
-  }
-
-  return Number((qty * unitPrice).toFixed(2));
-}
-
-function toDateKeyValue(value: string): string {
-  const parsed = DateTime.fromFormat(value, DATE_KEY_FORMAT, {
-    zone: KST_ZONE,
-  });
-  if (!parsed.isValid) {
-    return getTodayDateKey();
-  }
-  return parsed.toFormat(DATE_KEY_FORMAT);
-}
-
-function sortProductsByCreatedAtAsc(products: ProductOption[]): ProductOption[] {
-  return [...products].sort((a, b) => {
-    const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
-    const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
-    return aTime - bTime;
-  });
-}
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export function SettlementManageScreen(): JSX.Element {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const initialVendorId = searchParams.get("vendorId") ?? "";
-  const initialDateKey = toDateKeyValue(
-    searchParams.get("dateKey") ?? getTodayDateKey(),
-  );
-
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-
-  const [selectedVendorId, setSelectedVendorId] = useState(initialVendorId);
-  const [vendorInput, setVendorInput] = useState("");
-  const [vendorDropdownOpen, setVendorDropdownOpen] = useState(false);
-
-  const [dateKey, setDateKey] = useState(initialDateKey);
-  const [rows, setRows] = useState<EditableRow[]>(() => ensureBaseRows([]));
-
-  const [loadingMeta, setLoadingMeta] = useState(false);
-  const [loadingRows, setLoadingRows] = useState(false);
-  const [processingRowId, setProcessingRowId] = useState<string | null>(null);
-  const [activeProductRowId, setActiveProductRowId] = useState<string | null>(
-    null,
-  );
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [savedSnapshots, setSavedSnapshots] = useState<
-    Record<string, SavedRowSnapshot>
-  >({});
-  const [rowValidationErrors, setRowValidationErrors] = useState<
-    Record<string, RowValidationErrors>
-  >({});
-  const [autoSaveState, setAutoSaveState] = useState<AutoSaveState>("idle");
-  const [autoSaveRowKey, setAutoSaveRowKey] = useState<string | null>(null);
-  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
-  const rowsRef = useRef<EditableRow[]>(rows);
-
-  useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
-
-  const updateRouteQuery = useCallback(
-    (nextVendorId: string, nextDateKey: string) => {
-      const query = buildQueryString({
-        vendorId: nextVendorId || undefined,
-        dateKey: nextDateKey,
-      });
-      router.replace(`/dashboard/settlements/manage?${query}`);
-    },
-    [router],
-  );
-
-  const loadMeta = useCallback(async () => {
-    setLoadingMeta(true);
-    try {
-      const [vendorsResponse, productsResponse] = await Promise.all([
-        fetchJson<VendorListResponse>("/api/vendors?page=1&limit=500"),
-        fetchJson<ProductListResponse>("/api/products?page=1&limit=500"),
-      ]);
-
-      setVendors(vendorsResponse.data);
-      setProducts(sortProductsByCreatedAtAsc(productsResponse.data));
-
-      if (selectedVendorId) {
-        const selected = vendorsResponse.data.find(
-          (vendor) => vendor._id === selectedVendorId,
-        );
-        if (selected) {
-          setVendorInput(selected.name);
-        }
-      }
-    } catch (error) {
-      alert(
-        error instanceof Error ? error.message : "업체/상품 목록 조회 실패",
-      );
-    } finally {
-      setLoadingMeta(false);
-    }
-  }, [selectedVendorId]);
-
-  const loadRows = useCallback(async () => {
-    if (!selectedVendorId) {
-      setRows(ensureBaseRows([]));
-      setSavedSnapshots({});
-      setRowValidationErrors({});
-      setEditingRowId(null);
-      return;
-    }
-
-    setLoadingRows(true);
-    try {
-      const query = buildQueryString({ vendorId: selectedVendorId, dateKey });
-      const response = await fetchJson<SettlementManageResponse>(
-        `/api/settlements/manage?${query}`,
-      );
-
-      const mappedRows = response.data.rows.map((row) =>
-        mapApiRowToEditable(row),
-      );
-      setRows(ensureBaseRows(mappedRows));
-      setEditingRowId(null);
-      setSavedSnapshots(
-        Object.fromEntries(
-          response.data.rows.map((row) => [
-            row._id,
-            {
-              productName: row.productName,
-              productUnit: row.productUnit ?? "",
-              qty: row.qty,
-              unitPrice: row.unitPrice,
-            },
-          ]),
-        ),
-      );
-      setRowValidationErrors({});
-
-      setVendorInput((prev) => prev || response.data.vendor.name);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "계산서 데이터 조회 실패");
-      setRows(ensureBaseRows([]));
-      setSavedSnapshots({});
-      setRowValidationErrors({});
-    } finally {
-      setLoadingRows(false);
-    }
-  }, [dateKey, selectedVendorId]);
-
-  useEffect(() => {
-    void loadMeta();
-  }, [loadMeta]);
-
-  useEffect(() => {
-    void loadRows();
-  }, [loadRows]);
-
-  const selectedVendor = useMemo(
-    () => vendors.find((vendor) => vendor._id === selectedVendorId),
-    [vendors, selectedVendorId],
-  );
-
-  const vendorSuggestions = useMemo(() => {
-    const query = vendorInput.trim().toLowerCase();
-    if (!query) {
-      return vendors.slice(0, 12);
-    }
-
-    return vendors
-      .filter((vendor) => vendor.name.toLowerCase().includes(query))
-      .slice(0, 12);
-  }, [vendorInput, vendors]);
-
-  const productsByVendor = useMemo(() => {
-    if (!selectedVendorId) {
-      return products;
-    }
-
-    return products.filter(
-      (product) => !product.vendorId || product.vendorId === selectedVendorId,
-    );
-  }, [products, selectedVendorId]);
-
-  const totalAmount = useMemo(
-    () => rows.reduce((acc, row) => acc + calcRowAmount(row), 0),
-    [rows],
-  );
-
-  const updateRowField = (
-    localId: string,
-    field: EditableField,
-    value: string | boolean,
-  ): void => {
-    setRows((prev) =>
-      prev.map((row) => {
-        if (row.localId !== localId) {
-          return row;
-        }
-
-        return {
-          ...row,
-          [field]: value,
-        };
-      }),
-    );
-
-    if (field !== "selected") {
-      setRowValidationErrors((prev) => {
-        const rowErrors = prev[localId];
-        if (!rowErrors || !rowErrors[field]) {
-          return prev;
-        }
-
-        const nextRowErrors = { ...rowErrors };
-        delete nextRowErrors[field];
-
-        if (Object.keys(nextRowErrors).length === 0) {
-          const rest = { ...prev };
-          delete rest[localId];
-          return rest;
-        }
-
-        return {
-          ...prev,
-          [localId]: nextRowErrors,
-        };
-      });
-    }
-  };
-
-  const selectVendor = (vendor: VendorOption): void => {
-    setSelectedVendorId(vendor._id);
-    setVendorInput(vendor.name);
-    setVendorDropdownOpen(false);
-    updateRouteQuery(vendor._id, dateKey);
-  };
-
-  const applyVendorSearch = (): void => {
-    const query = vendorInput.trim().toLowerCase();
-    if (!query) {
-      alert("업체명을 입력하세요.");
-      return;
-    }
-
-    const matched =
-      vendors.find((vendor) => vendor.name.toLowerCase() === query) ??
-      vendors.find((vendor) => vendor.name.toLowerCase().includes(query));
-
-    if (!matched) {
-      alert("일치하는 업체가 없습니다.");
-      return;
-    }
-
-    selectVendor(matched);
-  };
-
-  const applyDate = (nextDateKey: string): void => {
-    const normalized = toDateKeyValue(nextDateKey);
-    setDateKey(normalized);
-    updateRouteQuery(selectedVendorId, normalized);
-  };
-
-  const moveDate = (days: number): void => {
-    try {
-      const next = parseDateKeyKst(dateKey)
-        .plus({ days })
-        .toFormat(DATE_KEY_FORMAT);
-      applyDate(next);
-    } catch {
-      applyDate(getTodayDateKey());
-    }
-  };
-
-  const buildPersistablePayload = (
-    row: EditableRow,
-  ): { payload: PersistableRowPayload | null; errors: RowValidationErrors } => {
-    const productName = row.productName.trim();
-    const productUnit = row.productUnit.trim();
-    const qty = parseNumber(row.qty);
-    const unitPrice = parseNumber(row.unitPrice);
-    const errors: RowValidationErrors = {};
-
-    if (!productName) {
-      errors.productName = "품목은 필수입니다.";
-    } else if (productName.length > 200) {
-      errors.productName = "품목은 200자 이하로 입력하세요.";
-    }
-
-    if (productUnit.length > 50) {
-      errors.productUnit = "규격은 50자 이하로 입력하세요.";
-    }
-
-    if (!Number.isFinite(qty)) {
-      errors.qty = "수량은 숫자여야 합니다.";
-    }
-
-    if (!Number.isFinite(unitPrice)) {
-      errors.unitPrice = "단가는 숫자여야 합니다.";
-    } else if (unitPrice < 0) {
-      errors.unitPrice = "단가는 0 이상이어야 합니다.";
-    }
-
-    if (Object.keys(errors).length > 0) {
-      return {
-        payload: null,
-        errors,
-      };
-    }
-
-    return {
-      payload: {
-        productName,
-        productUnit: productUnit || undefined,
-        qty,
-        unitPrice,
-      },
-      errors: {},
-    };
-  };
-
-  const isSameAsSavedSnapshot = (
-    row: EditableRow,
-    payload: PersistableRowPayload,
-  ): boolean => {
-    if (!row.id) {
-      return false;
-    }
-
-    const snapshot = savedSnapshots[row.id];
-    if (!snapshot) {
-      return false;
-    }
-
-    return (
-      snapshot.productName === payload.productName &&
-      snapshot.productUnit === (payload.productUnit ?? "") &&
-      snapshot.qty === payload.qty &&
-      snapshot.unitPrice === payload.unitPrice
-    );
-  };
-
-  const persistRow = async (
-    row: EditableRow,
-    payload: PersistableRowPayload,
-  ): Promise<void> => {
-    if (!selectedVendorId) {
-      return;
-    }
-
-    setProcessingRowId(row.localId);
-    setAutoSaveState("saving");
-    setAutoSaveRowKey(row.id ?? row.localId);
-
-    try {
-      let savedId: string | undefined;
-
-      if (row.id) {
-        const response = await fetchJson<{ data: { _id: string } }>(
-          "/api/settlements/manage",
-          {
-          method: "PATCH",
-          body: JSON.stringify({
-            id: row.id,
-            productName: payload.productName,
-            productUnit: payload.productUnit,
-            qty: payload.qty,
-            unitPrice: payload.unitPrice,
-          }),
-          },
-        );
-        savedId = response.data._id;
-      } else {
-        const response = await fetchJson<{ data: { _id: string } }>(
-          "/api/settlements/manage",
-          {
-          method: "POST",
-          body: JSON.stringify({
-            vendorId: selectedVendorId,
-            dateKey,
-            productName: payload.productName,
-            productUnit: payload.productUnit,
-            qty: payload.qty,
-            unitPrice: payload.unitPrice,
-          }),
-          },
-        );
-        savedId = response.data._id;
-      }
-
-      await loadRows();
-      setAutoSaveState("saved");
-      setAutoSaveRowKey(savedId ?? row.id ?? row.localId);
-      setLastAutoSavedAt(
-        DateTime.now().setZone(KST_ZONE).toFormat("HH:mm:ss"),
-      );
-    } catch (error) {
-      setAutoSaveState("error");
-      alert(error instanceof Error ? error.message : "행 저장 실패");
-    } finally {
-      setProcessingRowId(null);
-    }
-  };
-
-  const autoSaveRow = async (row: EditableRow): Promise<void> => {
-    if (!selectedVendorId || processingRowId === row.localId) {
-      return;
-    }
-
-    const { payload, errors } = buildPersistablePayload(row);
-    if (!payload) {
-      setRowValidationErrors((prev) => ({
-        ...prev,
-        [row.localId]: errors,
-      }));
-      setAutoSaveState("error");
-      setAutoSaveRowKey(row.id ?? row.localId);
-      return;
-    }
-
-    setRowValidationErrors((prev) => {
-      if (!prev[row.localId]) {
-        return prev;
-      }
-
-      const rest = { ...prev };
-      delete rest[row.localId];
-      return rest;
-    });
-
-    if (isSameAsSavedSnapshot(row, payload)) {
-      setEditingRowId((current) => (current === row.localId ? null : current));
-      return;
-    }
-
-    await persistRow(row, payload);
-    setEditingRowId((current) => (current === row.localId ? null : current));
-  };
-
-  const handleRowBlur = (localId: string): void => {
-    window.setTimeout(() => {
-      const activeElement = document.activeElement as HTMLElement | null;
-      if (activeElement?.dataset.rowid === localId) {
-        return;
-      }
-
-      const targetRow = rowsRef.current.find(
-        (item) => item.localId === localId,
-      );
-      if (!targetRow) {
-        return;
-      }
-
-      void autoSaveRow(targetRow);
-    }, 120);
-  };
-
-  const returnRow = async (row: EditableRow): Promise<void> => {
-    if (!row.id) {
-      alert("저장된 행만 반품 처리할 수 있습니다.");
-      return;
-    }
-
-    setProcessingRowId(row.localId);
-    try {
-      await fetchJson<{ data: unknown }>("/api/settlements/manage/return", {
-        method: "POST",
-        body: JSON.stringify({ transactionId: row.id }),
-      });
-      await loadRows();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "반품 처리 실패");
-    } finally {
-      setProcessingRowId(null);
-    }
-  };
-
-  const deleteRow = async (row: EditableRow): Promise<void> => {
-    if (!row.id) {
-      setRows((prev) =>
-        ensureBaseRows(prev.filter((item) => item.localId !== row.localId)),
-      );
-      return;
-    }
-
-    setProcessingRowId(row.localId);
-    try {
-      await fetchJson<{ data: unknown }>("/api/settlements/manage", {
-        method: "DELETE",
-        body: JSON.stringify({ id: row.id }),
-      });
-      await loadRows();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "행 삭제 실패");
-    } finally {
-      setProcessingRowId(null);
-    }
-  };
-
-  const addRow = (): void => {
-    setRows((prev) => [...prev, createEmptyRow()]);
-  };
-
-  const exportExcel = (): void => {
-    if (!selectedVendorId) {
-      alert("먼저 업체를 선택하세요.");
-      return;
-    }
-
-    const query = buildQueryString({ vendorId: selectedVendorId, dateKey });
-    window.location.href = `/api/settlements/export?${query}`;
-  };
-
-  const printPage = async (): Promise<void> => {
-    const vendorName = selectedVendor?.name ?? vendorInput.trim();
-    if (!selectedVendorId || !vendorName) {
-      alert("먼저 출력할 상호를 선택하세요.");
-      return;
-    }
-
-    const popup = window.open("", "_blank", "width=800,height=1100");
-    if (!popup) {
-      alert("인쇄 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.");
-      return;
-    }
-
-    popup.document.open();
-    popup.document.write(
-      '<!doctype html><html lang="ko"><head><meta charset="utf-8" /></head><body>인쇄 양식을 준비하는 중...</body></html>',
-    );
-    popup.document.close();
-
-    let supplier: SettlementPrintSupplier;
-
-    try {
-      const response = await fetchJson<PrintConfigResponse>(
-        "/api/settlements/print-config",
-      );
-      supplier = response.data;
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "인쇄 설정 정보를 불러오지 못했습니다.",
-      );
-      popup.close();
-      return;
-    }
-
-    const printableItems = rows
-      .map((row): SettlementPrintItem | null => {
-        const productName = row.productName.trim();
-        const qty = parseNumber(row.qty);
-        const unitPrice = parseNumber(row.unitPrice);
-
-        if (
-          !productName ||
-          !Number.isFinite(qty) ||
-          !Number.isFinite(unitPrice)
-        ) {
-          return null;
-        }
-
-        return {
-          dateKey,
-          productName,
-          productUnit: row.productUnit.trim(),
-          qty,
-          unitPrice,
-          amount: Number((qty * unitPrice).toFixed(2)),
-        };
-      })
-      .filter((item): item is SettlementPrintItem => item !== null);
-
-    const html = buildSettlementPrintHtml({
-      dateKey,
-      vendorName,
-      supplier,
-      items: printableItems,
-    });
-
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-  };
-
-  const getProductSuggestions = (row: EditableRow): ProductOption[] => {
-    const sortedProducts = sortProductsByCreatedAtAsc(productsByVendor);
-    const query = row.productName.trim().toLowerCase();
-
-    if (!query) {
-      return sortedProducts.slice(0, 8);
-    }
-
-    return sortedProducts
-      .filter((product) => product.name.toLowerCase().includes(query))
-      .slice(0, 8);
-  };
-
-  const applyProduct = (row: EditableRow, product: ProductOption): void => {
-    setRows((prev) =>
-      prev.map((item) => {
-        if (item.localId !== row.localId) {
-          return item;
-        }
-
-        return {
-          ...item,
-          productName: product.name,
-          productUnit: product.unit ?? "",
-        };
-      }),
-    );
-    setRowValidationErrors((prev) => {
-      const rowErrors = prev[row.localId];
-      if (!rowErrors || (!rowErrors.productName && !rowErrors.productUnit)) {
-        return prev;
-      }
-
-      const nextRowErrors = { ...rowErrors };
-      delete nextRowErrors.productName;
-      delete nextRowErrors.productUnit;
-
-      if (Object.keys(nextRowErrors).length === 0) {
-        const rest = { ...prev };
-        delete rest[row.localId];
-        return rest;
-      }
-
-      return {
-        ...prev,
-        [row.localId]: nextRowErrors,
-      };
-    });
-
-    setActiveProductRowId(null);
-    setEditingRowId((current) => current ?? row.localId);
-  };
+  const settlement = useSettlementManage();
+
+  const selectedRows = settlement.rows.filter((row) => row.selected && row.id);
+  const selectedCount = selectedRows.length;
+  const selectedAmount = selectedRows.reduce((acc, row) => {
+    const qty = parseFloat(row.qty.replace(/,/g, "")) || 0;
+    const price = parseFloat(row.unitPrice.replace(/,/g, "")) || 0;
+    return acc + qty * price;
+  }, 0);
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <CardTitle className="text-lg">계산서 상세 관리</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-md border border-slate-300 bg-slate-50 px-1 py-1">
-                <span className="px-2 text-xs font-medium text-slate-500">
-                  거래일자
-                </span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => moveDate(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <DatePicker
-                  className="w-40"
-                  value={dateKey}
-                  onChange={(val) => applyDate(val)}
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => moveDate(1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => applyDate(getTodayDateKey())}
-                >
-                  오늘
-                </Button>
-              </div>
+    <div className="space-y-6 relative pb-16">
+      <SettlementToolbar
+        vendors={settlement.vendors}
+        selectedVendorId={settlement.selectedVendorId}
+        dateKey={settlement.dateKey}
+        onSelectVendor={settlement.selectVendor}
+        onDateChange={settlement.applyDate}
+        onMoveDate={settlement.moveDate}
+        onExportExcel={settlement.exportExcel}
+        onPrintPage={settlement.printPage}
+      />
 
-              <Button
-                type="button"
-                variant="success"
-                className="whitespace-nowrap"
-                onClick={exportExcel}
-              >
-                <FileSpreadsheet className="mr-1 h-4 w-4" />
-                엑셀 저장
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className="whitespace-nowrap"
-                onClick={() => void printPage()}
-              >
-                <Printer className="mr-1 h-4 w-4" />
-                인쇄
-              </Button>
-            </div>
-          </div>
+      <SettlementTable
+        rows={settlement.rows}
+        productsByVendor={settlement.productsByVendor}
+        totalAmount={settlement.totalAmount}
+        loadingMeta={settlement.loadingMeta}
+        loadingRows={settlement.loadingRows}
+        processingRowId={settlement.processingRowId}
+        editingRowId={settlement.editingRowId}
+        setEditingRowId={settlement.setEditingRowId}
+        rowValidationErrors={settlement.rowValidationErrors}
+        autoSaveState={settlement.autoSaveState}
+        autoSaveRowKey={settlement.autoSaveRowKey}
+        lastAutoSavedAt={settlement.lastAutoSavedAt}
+        allSelected={settlement.allSelected}
+        toggleSelectAll={settlement.toggleSelectAll}
+        onFieldChange={settlement.updateRowField}
+        onRowBlur={settlement.handleRowBlur}
+        onSelectProduct={settlement.applyProduct}
+        onReturnRow={settlement.returnRow}
+        onDeleteRow={settlement.deleteRow}
+        onAddRow={settlement.addRow}
+        onCancelEdit={settlement.cancelRowEdit}
+        onSaveRow={settlement.saveRow}
+        savedTotalAmount={settlement.savedTotalAmount}
+      />
 
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <span className="w-14 text-sm font-medium text-slate-600">
-              상호
+      {/* Floating Bulk Action Bar */}
+      {selectedCount > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-6 rounded-full border border-slate-800 bg-slate-900/95 px-6 py-3.5 text-white shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-200">
+            <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white font-bold">
+              {selectedCount}
             </span>
-            <div className="relative flex-1">
-              <Input
-                value={vendorInput}
-                placeholder="업체명을 검색하세요"
-                onFocus={() => setVendorDropdownOpen(true)}
-                onChange={(event) => {
-                  setVendorInput(event.target.value);
-                  setVendorDropdownOpen(true);
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => setVendorDropdownOpen(false), 120);
-                }}
-              />
-              {vendorDropdownOpen && vendorSuggestions.length ? (
-                <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
-                  {vendorSuggestions.map((vendor) => (
-                    <button
-                      key={vendor._id}
-                      type="button"
-                      className="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-700 last:border-0 hover:bg-blue-50"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => selectVendor(vendor)}
-                    >
-                      {vendor.name}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <span>건 선택됨</span>
+            <span className="text-slate-400">|</span>
+            <span>선택 합계:</span>
+            <span className="text-blue-400 font-semibold">
+              {new Intl.NumberFormat("ko-KR").format(selectedAmount)}원
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
-              className="whitespace-nowrap"
-              onClick={applyVendorSearch}
+              size="sm"
+              disabled={settlement.bulkProcessing}
+              onClick={settlement.triggerBulkReturn}
+              className="h-8 border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white"
             >
-              <Search className="mr-1 h-4 w-4" />
-              검색
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              선택 상호
-              <div className="mt-1 text-base font-semibold text-slate-900">
-                {selectedVendor?.name ?? "미선택"}
-              </div>
-            </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              거래일자
-              <div className="mt-1 text-base font-semibold text-slate-900">
-                {dateKey}
-              </div>
-            </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              합계금액
-              <div className="mt-1 text-base font-semibold text-primary">
-                {formatCurrency(totalAmount)}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-0">
-          <div className="flex justify-end px-4 py-3">
-            <div
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium ${
-                autoSaveState === "saving"
-                  ? "border-blue-200 bg-blue-50 text-blue-700"
-                  : autoSaveState === "saved"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : autoSaveState === "error"
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
-            >
-              {autoSaveState === "saving" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : autoSaveState === "saved" ? (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              ) : autoSaveState === "error" ? (
-                <AlertCircle className="h-3.5 w-3.5" />
+              {settlement.bulkProcessing ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <RotateCcw className="mr-1 h-3.5 w-3.5" />
               )}
-              <span>
-                {autoSaveState === "saving"
-                  ? "자동 저장 중..."
-                  : autoSaveState === "saved"
-                    ? `마지막 저장 ${lastAutoSavedAt ?? "-"}`
-                    : autoSaveState === "error"
-                      ? "자동 저장 실패"
-                      : "자동 저장 대기"}
-              </span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] border-collapse text-sm">
-              <thead className="bg-slate-50 text-slate-700">
-                <tr>
-                  <th className="w-12 border border-slate-200 px-2 py-3 text-center">
-                    <input type="checkbox" aria-label="전체 선택" />
-                  </th>
-                  <th className="border border-slate-200 px-3 py-3 text-left">
-                    품목
-                  </th>
-                  <th className="w-36 border border-slate-200 px-3 py-3 text-left">
-                    규격
-                  </th>
-                  <th className="w-28 border border-slate-200 px-3 py-3 text-right">
-                    수량
-                  </th>
-                  <th className="w-36 border border-slate-200 px-3 py-3 text-right">
-                    단가
-                  </th>
-                  <th className="w-40 border border-slate-200 bg-slate-100 px-3 py-3 text-right">
-                    합계
-                  </th>
-                  <th className="w-40 border border-slate-200 px-3 py-3 text-center">
-                    관리
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.map((row) => {
-                  const amount = calcRowAmount(row);
-                  const suggestions = getProductSuggestions(row);
-                  const rowBusy = processingRowId === row.localId;
-                  const isEditingRow = editingRowId === row.localId;
-                  const currentRowKey = row.id ?? row.localId;
-                  const isAutoSavingRow =
-                    autoSaveState === "saving" &&
-                    autoSaveRowKey === currentRowKey;
-                  const isAutoSavedRow =
-                    autoSaveState === "saved" &&
-                    autoSaveRowKey === currentRowKey;
-                  const isAutoSaveFailedRow =
-                    autoSaveState === "error" &&
-                    autoSaveRowKey === currentRowKey;
-                  const rowLocked =
-                    Boolean(row.id) && editingRowId !== row.localId;
-                  const validationErrors = rowValidationErrors[row.localId] ?? {};
-                  const invalidCellClassName =
-                    "bg-red-50/20 shadow-[inset_0_0_0_1px_#f87171]";
-                  const invalidInputClassName =
-                    "border border-red-500 bg-red-50 focus-visible:ring-1 focus-visible:ring-red-200";
-                  const inputClassName = `h-8 border-0 px-1 shadow-none focus-visible:ring-0 ${
-                    rowLocked
-                      ? "cursor-not-allowed bg-slate-100 text-slate-500"
-                      : isEditingRow
-                        ? "bg-blue-50/80"
-                        : "bg-transparent"
-                  }`;
-
-                  return (
-                    <tr
-                      key={row.localId}
-                      className={
-                        isEditingRow ? "bg-blue-50/50" : "hover:bg-slate-50"
-                      }
-                    >
-                      <td className="border border-slate-200 px-2 py-2 text-center">
-                        <input
-                          type="checkbox"
-                          checked={row.selected}
-                          onChange={(event) =>
-                            updateRowField(
-                              row.localId,
-                              "selected",
-                              event.target.checked,
-                            )
-                          }
-                        />
-                      </td>
-
-                      <td
-                        className={`relative border border-slate-200 px-2 py-1 ${
-                          validationErrors.productName ? invalidCellClassName : ""
-                        }`}
-                      >
-                        <Input
-                          className={`${inputClassName} ${
-                            validationErrors.productName
-                              ? invalidInputClassName
-                              : ""
-                          }`}
-                          data-rowid={row.localId}
-                          value={row.productName}
-                          title={validationErrors.productName}
-                          readOnly={rowLocked || rowBusy}
-                          onFocus={() => {
-                            if (!rowLocked) {
-                              setActiveProductRowId(row.localId);
-                            }
-                          }}
-                          onBlur={() => {
-                            window.setTimeout(
-                              () =>
-                                setActiveProductRowId((current) =>
-                                  current === row.localId ? null : current,
-                                ),
-                              120,
-                            );
-                            handleRowBlur(row.localId);
-                          }}
-                          onChange={(event) =>
-                            updateRowField(
-                              row.localId,
-                              "productName",
-                              event.target.value,
-                            )
-                          }
-                        />
-
-                        {activeProductRowId === row.localId &&
-                        suggestions.length ? (
-                          <div className="absolute left-0 top-full z-20 mt-1 max-h-60 w-[320px] overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
-                            <div className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
-                              추천 품목
-                            </div>
-                            {suggestions.map((product) => (
-                              <button
-                                key={product._id}
-                                type="button"
-                                className="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-700 last:border-0 hover:bg-blue-50"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => applyProduct(row, product)}
-                              >
-                                <span>{product.name}</span>
-                                <span className="text-xs text-slate-400">
-                                  {product.unit ?? "-"}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </td>
-
-                      <td
-                        className={`border border-slate-200 px-2 py-1 ${
-                          validationErrors.productUnit ? invalidCellClassName : ""
-                        }`}
-                      >
-                        <Input
-                          className={`${inputClassName} text-slate-600 ${
-                            validationErrors.productUnit
-                              ? invalidInputClassName
-                              : ""
-                          }`}
-                          data-rowid={row.localId}
-                          value={row.productUnit}
-                          title={validationErrors.productUnit}
-                          readOnly={rowLocked || rowBusy}
-                          onBlur={() => handleRowBlur(row.localId)}
-                          onChange={(event) =>
-                            updateRowField(
-                              row.localId,
-                              "productUnit",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </td>
-
-                      <td
-                        className={`border border-slate-200 px-2 py-1 ${
-                          validationErrors.qty ? invalidCellClassName : ""
-                        }`}
-                      >
-                        <Input
-                          className={`${inputClassName} text-right ${
-                            validationErrors.qty ? invalidInputClassName : ""
-                          }`}
-                          data-rowid={row.localId}
-                          inputMode="decimal"
-                          value={row.qty}
-                          title={validationErrors.qty}
-                          readOnly={rowLocked || rowBusy}
-                          onBlur={() => handleRowBlur(row.localId)}
-                          onChange={(event) =>
-                            updateRowField(
-                              row.localId,
-                              "qty",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </td>
-
-                      <td
-                        className={`border border-slate-200 px-2 py-1 ${
-                          validationErrors.unitPrice ? invalidCellClassName : ""
-                        }`}
-                      >
-                        <Input
-                          className={`${inputClassName} text-right ${
-                            validationErrors.unitPrice
-                              ? invalidInputClassName
-                              : ""
-                          }`}
-                          data-rowid={row.localId}
-                          inputMode="decimal"
-                          value={row.unitPrice}
-                          title={validationErrors.unitPrice}
-                          readOnly={rowLocked || rowBusy}
-                          onBlur={() => handleRowBlur(row.localId)}
-                          onChange={(event) =>
-                            updateRowField(
-                              row.localId,
-                              "unitPrice",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </td>
-
-                      <td
-                        className={`border border-slate-200 bg-slate-50 px-3 py-1 text-right font-semibold ${
-                          amount < 0 ? "text-red-600" : "text-slate-900"
-                        }`}
-                      >
-                        {Number.isFinite(amount) ? formatCurrency(amount) : ""}
-                      </td>
-
-                      <td className="border border-slate-200 px-2 py-1 text-center">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              title="수정"
-                              className={`rounded p-1 transition-colors ${
-                                isEditingRow
-                                  ? "bg-blue-100 text-blue-700 ring-1 ring-blue-300"
-                                  : "text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                              } disabled:opacity-50`}
-                              disabled={rowBusy}
-                              onClick={() =>
-                                setEditingRowId((current) =>
-                                  current === row.localId ? null : row.localId,
-                                )
-                              }
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="반품"
-                              className="rounded p-1 text-slate-400 hover:bg-orange-50 hover:text-orange-500 disabled:opacity-50"
-                              disabled={!row.id || rowBusy}
-                              onClick={() => void returnRow(row)}
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="삭제"
-                              className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
-                              disabled={rowBusy}
-                              onClick={() => void deleteRow(row)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                          <p className="min-h-4 text-[11px] leading-4">
-                            {isAutoSavingRow ? (
-                              <span className="inline-flex items-center gap-1 text-blue-600">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                저장중...
-                              </span>
-                            ) : isAutoSavedRow ? (
-                              <span className="text-emerald-600">
-                                저장됨 {lastAutoSavedAt ?? ""}
-                              </span>
-                            ) : isAutoSaveFailedRow ? (
-                              <span className="text-red-600">저장 실패</span>
-                            ) : null}
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs text-slate-500">
-              {loadingMeta || loadingRows
-                ? "데이터를 불러오는 중..."
-                : "품목 기본 15행이 제공됩니다. 연필 아이콘으로 수정 후, 포커스가 벗어나면 자동 저장됩니다."}
-            </p>
-            <Button type="button" variant="outline" size="sm" onClick={addRow}>
-              <Plus className="mr-1 h-4 w-4" />행 추가
+              선택 반품
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={settlement.bulkProcessing}
+              onClick={settlement.triggerBulkDelete}
+              className="h-8 bg-red-600 text-white hover:bg-red-700"
+            >
+              {settlement.bulkProcessing ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+              )}
+              선택 삭제
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* Confirmation Alert Dialog */}
+      {settlement.confirmState && (
+        <AlertDialog
+          open={settlement.confirmState.isOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              settlement.confirmState?.onCancel();
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{settlement.confirmState.title}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {settlement.confirmState.description}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={settlement.confirmState.onCancel}>
+                취소
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={settlement.confirmState.onConfirm}>
+                확인
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
