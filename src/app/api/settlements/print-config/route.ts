@@ -11,9 +11,9 @@ export async function GET(): Promise<NextResponse> {
         businessNumber: process.env.SUPPLIER_BUSINESS_NUMBER ?? "",
         companyName: process.env.SUPPLIER_COMPANY_NAME ?? "",
         ownerName: process.env.SUPPLIER_OWNER_NAME ?? "",
+        phone: process.env.SUPPLIER_PHONE ?? "",
         address: process.env.SUPPLIER_ADDRESS ?? "",
-        businessType: process.env.SUPPLIER_BUSINESS_TYPE ?? "",
-        itemType: process.env.SUPPLIER_ITEM_TYPE ?? "",
+        accountText: process.env.SUPPLIER_ACCOUNT_TEXT ?? "",
       },
     });
   } catch (error) {

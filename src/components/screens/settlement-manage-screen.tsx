@@ -30,6 +30,11 @@ import {
   getTodayDateKey,
   parseDateKeyKst,
 } from "@/lib/kst";
+import {
+  buildSettlementPrintHtml,
+  type SettlementPrintItem,
+  type SettlementPrintSupplier,
+} from "@/lib/settlement-print";
 import { formatCurrency } from "@/lib/utils";
 
 type VendorOption = {
@@ -112,27 +117,9 @@ type SavedRowSnapshot = {
 type RowValidationErrors = Partial<Record<EditableValueField, string>>;
 
 const MIN_BASE_ROWS = 15;
-const PRINT_ROWS_PER_PAGE = 23;
-
-type PrintItem = {
-  productName: string;
-  qty: number;
-  unitPrice: number;
-  amount: number;
-  note: string;
-};
-
-type PrintSupplier = {
-  businessNumber: string;
-  companyName: string;
-  ownerName: string;
-  address: string;
-  businessType: string;
-  itemType: string;
-};
 
 type PrintConfigResponse = {
-  data: PrintSupplier;
+  data: SettlementPrintSupplier;
 };
 
 type AutoSaveState = "idle" | "saving" | "saved" | "error";
@@ -184,64 +171,6 @@ function parseNumber(value: string): number {
     return Number.NaN;
   }
   return Number(normalized);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function formatPrintNumber(value: number): string {
-  if (!Number.isFinite(value)) {
-    return "";
-  }
-
-  if (Number.isInteger(value)) {
-    return value.toLocaleString("ko-KR");
-  }
-
-  return value.toLocaleString("ko-KR", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-}
-
-function toPrintableItems(rows: EditableRow[]): PrintItem[] {
-  return rows
-  .map((row) => {
-      const productName = row.productName.trim();
-      const qty = parseNumber(row.qty);
-      const unitPrice = parseNumber(row.unitPrice);
-
-      if (!productName || !Number.isFinite(qty) || !Number.isFinite(unitPrice)) {
-        return null;
-      }
-
-      return {
-        productName,
-        qty,
-        unitPrice,
-        amount: Number((qty * unitPrice).toFixed(2)),
-        note: qty < 0 ? "반품" : "",
-      };
-    })
-    .filter((item): item is PrintItem => item !== null);
-}
-
-function chunkPrintItems(items: PrintItem[], size: number): PrintItem[][] {
-  if (items.length === 0) {
-    return [[]];
-  }
-
-  const chunks: PrintItem[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
 }
 
 function calcRowAmount(row: EditableRow): number {
@@ -764,7 +693,25 @@ export function SettlementManageScreen(): JSX.Element {
   };
 
   const printPage = async (): Promise<void> => {
-    let supplier: PrintSupplier;
+    const vendorName = selectedVendor?.name ?? vendorInput.trim();
+    if (!selectedVendorId || !vendorName) {
+      alert("먼저 출력할 상호를 선택하세요.");
+      return;
+    }
+
+    const popup = window.open("", "_blank", "width=800,height=1100");
+    if (!popup) {
+      alert("인쇄 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.");
+      return;
+    }
+
+    popup.document.open();
+    popup.document.write(
+      '<!doctype html><html lang="ko"><head><meta charset="utf-8" /></head><body>인쇄 양식을 준비하는 중...</body></html>',
+    );
+    popup.document.close();
+
+    let supplier: SettlementPrintSupplier;
 
     try {
       const response = await fetchJson<PrintConfigResponse>(
@@ -777,237 +724,41 @@ export function SettlementManageScreen(): JSX.Element {
           ? error.message
           : "인쇄 설정 정보를 불러오지 못했습니다.",
       );
+      popup.close();
       return;
     }
 
-    const printableItems = toPrintableItems(rows);
-    const totalAmount = printableItems.reduce(
-      (acc, item) => acc + item.amount,
-      0,
-    );
-    const pages = chunkPrintItems(printableItems, PRINT_ROWS_PER_PAGE);
+    const printableItems = rows
+      .map((row): SettlementPrintItem | null => {
+        const productName = row.productName.trim();
+        const qty = parseNumber(row.qty);
+        const unitPrice = parseNumber(row.unitPrice);
 
-    const pagesHtml = pages
-      .map((pageItems, pageIndex) => {
-        const isLastPage = pageIndex === pages.length - 1;
-        const emptyRows = Math.max(PRINT_ROWS_PER_PAGE - pageItems.length, 0);
+        if (
+          !productName ||
+          !Number.isFinite(qty) ||
+          !Number.isFinite(unitPrice)
+        ) {
+          return null;
+        }
 
-        const itemRowsHtml = pageItems
-          .map(
-            (item) => `<tr>
-          <td class="left">${escapeHtml(item.productName)}</td>
-          <td class="right">${formatPrintNumber(item.qty)}</td>
-          <td class="right">${formatPrintNumber(item.unitPrice)}</td>
-          <td class="right">${formatPrintNumber(item.amount)}</td>
-          <td>${escapeHtml(item.note)}</td>
-        </tr>`,
-          )
-          .join("");
-
-        const emptyRowsHtml = Array.from({ length: emptyRows })
-          .map(
-            () => `<tr>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-        </tr>`,
-          )
-          .join("");
-
-        const totalRowHtml = isLastPage
-          ? `<tr class="total">
-              <td>계</td>
-              <td></td>
-              <td></td>
-              <td class="right">${formatPrintNumber(totalAmount)}</td>
-              <td></td>
-            </tr>`
-          : "";
-
-        return `<section class="sheet ${isLastPage ? "" : "page-break"}">
-      <div class="title">일반계산서</div>
-      <div class="meta">거래일자: ${escapeHtml(dateKey)} | ${pageIndex + 1} / ${pages.length}</div>
-
-      <table class="supplier">
-        <colgroup>
-          <col style="width: 17%;" />
-          <col style="width: 16%;" />
-          <col style="width: 23%;" />
-          <col style="width: 14%;" />
-          <col style="width: 20%;" />
-          <col style="width: 10%;" />
-        </colgroup>
-        <tbody>
-          <tr>
-            <th rowspan="5">공급자</th>
-            <th>사업자번호</th>
-            <td colspan="4" class="left">${escapeHtml(supplier.businessNumber)}</td>
-          </tr>
-          <tr>
-            <th>상호</th>
-            <td colspan="2" class="left">${escapeHtml(supplier.companyName)}</td>
-            <th>성명</th>
-            <td>${escapeHtml(supplier.ownerName)}</td>
-            <td>(인)</td>
-          </tr>
-          <tr>
-            <th>소재지</th>
-            <td colspan="4" class="left">${escapeHtml(supplier.address)}</td>
-          </tr>
-          <tr>
-            <th>업태</th>
-            <td>${escapeHtml(supplier.businessType)}</td>
-            <th>종목</th>
-            <td colspan="2">${escapeHtml(supplier.itemType)}</td>
-          </tr>
-          <tr>
-            <th>담당자</th>
-            <td></td>
-            <th>전화번호</th>
-            <td colspan="2"></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <table class="items">
-        <colgroup>
-          <col style="width: 38%;" />
-          <col style="width: 14%;" />
-          <col style="width: 19%;" />
-          <col style="width: 20%;" />
-          <col style="width: 9%;" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>품명</th>
-            <th>수량</th>
-            <th>단가</th>
-            <th>금액</th>
-            <th>비고</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemRowsHtml}
-          ${emptyRowsHtml}
-          ${totalRowHtml}
-        </tbody>
-      </table>
-    </section>`;
+        return {
+          dateKey,
+          productName,
+          productUnit: row.productUnit.trim(),
+          qty,
+          unitPrice,
+          amount: Number((qty * unitPrice).toFixed(2)),
+        };
       })
-      .join("");
+      .filter((item): item is SettlementPrintItem => item !== null);
 
-    const html = `<!doctype html>
-<html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <title>거래명세서 인쇄</title>
-    <style>
-      @page {
-        size: A5 portrait;
-        margin: 8mm;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        color: #111827;
-        font-family: "Pretendard", "Pretendard Variable", "Malgun Gothic", sans-serif;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-
-      .sheet {
-        width: 132mm;
-        margin: 0 auto 0 auto;
-      }
-
-      .title {
-        margin: 4mm 0 5mm;
-        text-align: center;
-        font-size: 11mm;
-        font-weight: 700;
-      }
-
-      .meta {
-        margin-bottom: 1.8mm;
-        text-align: right;
-        font-size: 11px;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-      }
-
-      th,
-      td {
-        border: 1px solid #111827;
-        padding: 1.2mm 1.4mm;
-        font-size: 10.5px;
-        line-height: 1.2;
-        text-align: center;
-        vertical-align: middle;
-      }
-
-      .supplier {
-        margin-bottom: 1.8mm;
-      }
-
-      .supplier th,
-      .supplier td {
-        height: 5.3mm;
-        font-size: 10px;
-      }
-
-      .items td,
-      .items th {
-        height: 5.9mm;
-      }
-
-      .left {
-        text-align: left;
-      }
-
-      .right {
-        text-align: right;
-      }
-
-      .total td {
-        font-weight: 700;
-      }
-
-      .page-break {
-        page-break-after: always;
-        break-after: page;
-      }
-    </style>
-  </head>
-  <body>
-    ${pagesHtml}
-    <script>
-      window.onload = function() {
-        setTimeout(function() {
-          window.print();
-        }, 200);
-      };
-      window.onafterprint = function() {
-        window.close();
-      };
-    </script>
-  </body>
-</html>`;
-
-    const popup = window.open("", "_blank", "width=800,height=1100");
-    if (!popup) {
-      alert("인쇄 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.");
-      return;
-    }
+    const html = buildSettlementPrintHtml({
+      dateKey,
+      vendorName,
+      supplier,
+      items: printableItems,
+    });
 
     popup.document.open();
     popup.document.write(html);
