@@ -30,6 +30,8 @@ interface ComboboxProps<T> {
   className?: string
   disabled?: boolean
   allowCustomValue?: boolean
+  id?: string
+  ariaLabel?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +46,8 @@ export function Combobox<T extends Record<string, any>>({
   className,
   disabled,
   allowCustomValue = false,
+  id,
+  ariaLabel,
 }: ComboboxProps<T>) {
   const [open, setOpen] = React.useState(false)
   const [searchValue, setSearchValue] = React.useState("")
@@ -83,11 +87,13 @@ export function Combobox<T extends Record<string, any>>({
       <PopoverTrigger asChild>
         <Button
           type="button"
+          id={id}
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          aria-label={ariaLabel}
           disabled={disabled}
-          className={cn("w-full justify-between font-normal text-slate-700 h-10 px-3", className)}
+          className={cn("h-11 w-full justify-between px-3.5 text-base font-normal text-slate-700", className)}
         >
           <span className="truncate">
             {displayLabel}

@@ -177,7 +177,7 @@ export function DatePicker({
         id={id}
         type="button"
         className={cn(
-          "flex h-11 w-full items-center justify-between rounded-md border border-border bg-white px-4 py-2 text-base text-slate-800 shadow-sm",
+          "flex h-11 w-full items-center justify-between rounded-lg border border-border bg-white px-3.5 py-2.5 text-base text-slate-800 shadow-sm",
           "hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
           "transition-colors",
           !value && "text-slate-400",
@@ -193,7 +193,7 @@ export function DatePicker({
           <div className="mb-2 flex items-center justify-between">
             <button
               type="button"
-              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
               onClick={() => navigateMonth(-1)}
               aria-label="이전 달"
             >
@@ -204,7 +204,7 @@ export function DatePicker({
             </span>
             <button
               type="button"
-              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
               onClick={() => navigateMonth(1)}
               aria-label="다음 달"
             >
@@ -229,7 +229,7 @@ export function DatePicker({
                 key={day.key}
                 type="button"
                 className={cn(
-                  "mx-auto flex h-9 w-9 items-center justify-center rounded-md text-base transition-colors",
+                  "mx-auto flex h-10 w-10 items-center justify-center rounded-md text-base transition-colors",
                   day.isCurrentMonth ? "text-slate-700" : "text-slate-300",
                   day.isToday && !day.isSelected && "font-bold text-primary",
                   day.isSelected &&

@@ -1,25 +1,18 @@
 "use client";
 
-import Link from "next/link";
-import { Search } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-
-import { VendorUpsertDialog } from "@/components/vendors/vendor-upsert-dialog";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Building2,
+  CircleCheck,
+  CirclePause,
+  Plus,
+  RotateCcw,
+  Search,
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Pagination } from "@/components/ui/pagination";
-import { Skeleton } from "@/components/ui/skeleton";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +23,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { DataTableShell } from "@/components/ui/data-table-shell";
+import { FilterBar, FilterChip } from "@/components/ui/filter-bar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { MetricCard } from "@/components/ui/metric-card";
+import { MoneyText } from "@/components/ui/money-text";
+import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState, ErrorState } from "@/components/ui/state-panel";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { VendorUpsertDialog } from "@/components/vendors/vendor-upsert-dialog";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { formatCurrency } from "@/lib/utils";
 
@@ -63,50 +69,37 @@ export function VendorsScreen(): JSX.Element {
   const [items, setItems] = useState<VendorRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [page, setPage] = useState(1);
   const limit = 20;
   const [total, setTotal] = useState(0);
+  const [activeCount, setActiveCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
-
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingVendor, setEditingVendor] = useState<VendorRow | null>(null);
   const isUpsertModalOpen = isCreateModalOpen || Boolean(editingVendor);
   const upsertMode = editingVendor ? "edit" : "create";
+  const deletingVendor = items.find((item) => item._id === deletingId);
 
   const setCreateModalOpen = useCallback(
     (open: boolean): void => {
       const params = new URLSearchParams(searchParams.toString());
-
       if (open) {
         params.set("modal", "create");
       } else {
         params.delete("modal");
       }
-
       const query = params.toString();
       router.push(query ? `${pathname}?${query}` : pathname);
     },
     [pathname, router, searchParams],
   );
 
-  const handleCreateModalOpen = useCallback((): void => {
-    setEditingVendor(null);
-    setCreateModalOpen(true);
-  }, [setCreateModalOpen]);
-
-  const handleCreateModalClose = useCallback((): void => {
-    setCreateModalOpen(false);
-  }, [setCreateModalOpen]);
-
   const loadVendors = useCallback(
     async (options?: { page?: number; keyword?: string }) => {
       const targetPage = options?.page ?? page;
       const targetKeyword = options?.keyword ?? keyword;
-
       setLoading(true);
       setError(null);
 
@@ -116,9 +109,12 @@ export function VendorsScreen(): JSX.Element {
           limit,
           keyword: targetKeyword || undefined,
         });
-        const response = await fetchJson<VendorListResponse>(`/api/vendors?${query}`);
+        const response = await fetchJson<VendorListResponse>(
+          `/api/vendors?${query}`,
+        );
         setItems(response.data);
         setTotal(response.meta.total);
+        setActiveCount(response.meta.activeCount);
         setTotalPages(response.meta.totalPages);
       } catch (loadError) {
         setError(
@@ -130,12 +126,23 @@ export function VendorsScreen(): JSX.Element {
         setLoading(false);
       }
     },
-    [keyword, limit, page],
+    [keyword, page],
   );
 
   useEffect(() => {
     void loadVendors();
   }, [loadVendors]);
+
+  const handleSearch = (): void => {
+    setKeyword(keywordInput.trim());
+    setPage(1);
+  };
+
+  const resetSearch = (): void => {
+    setKeywordInput("");
+    setKeyword("");
+    setPage(1);
+  };
 
   const handleCreateSuccess = useCallback(async (): Promise<void> => {
     setKeywordInput("");
@@ -144,23 +151,6 @@ export function VendorsScreen(): JSX.Element {
     setCreateModalOpen(false);
     await loadVendors({ page: 1, keyword: "" });
   }, [loadVendors, setCreateModalOpen]);
-
-  const handleEditModalClose = useCallback((): void => {
-    setEditingVendor(null);
-  }, []);
-
-  const handleEditModalOpen = useCallback(
-    (vendor: VendorRow): void => {
-      setCreateModalOpen(false);
-      setEditingVendor(vendor);
-    },
-    [setCreateModalOpen],
-  );
-
-  const handleEditSuccess = useCallback(async (): Promise<void> => {
-    setEditingVendor(null);
-    await loadVendors();
-  }, [loadVendors]);
 
   const handleUpsertModalOpenChange = useCallback(
     (open: boolean): void => {
@@ -172,32 +162,22 @@ export function VendorsScreen(): JSX.Element {
       }
 
       if (editingVendor) {
-        handleEditModalClose();
-        return;
+        setEditingVendor(null);
+      } else {
+        setCreateModalOpen(false);
       }
-
-      handleCreateModalClose();
     },
-    [
-      editingVendor,
-      handleCreateModalClose,
-      handleEditModalClose,
-      setCreateModalOpen,
-    ],
+    [editingVendor, setCreateModalOpen],
   );
 
   const handleUpsertSuccess = useCallback(async (): Promise<void> => {
     if (editingVendor) {
-      await handleEditSuccess();
+      setEditingVendor(null);
+      await loadVendors();
       return;
     }
-
     await handleCreateSuccess();
-  }, [editingVendor, handleCreateSuccess, handleEditSuccess]);
-
-  const handleDeleteClick = (id: string): void => {
-    setDeletingId(id);
-  };
+  }, [editingVendor, handleCreateSuccess, loadVendors]);
 
   const confirmDelete = async (id: string): Promise<void> => {
     try {
@@ -218,140 +198,271 @@ export function VendorsScreen(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-1">
-        <Card>
-          <CardContent className="flex items-center justify-between p-6">
-            <div>
-              <p className="text-sm text-slate-500">전체 거래처</p>
-              <p className="mt-1 text-2xl font-bold text-slate-800">
-                {formatCurrency(total)}개
-              </p>
-            </div>
-            <div className="rounded-full bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-700">
-              VENDORS
-            </div>
-          </CardContent>
-        </Card>
+      <PageHeader
+        eyebrow="매출 관리"
+        title="거래처 관리"
+        description="거래처 정보와 이번 달 거래액, 운영 상태를 확인하고 상세 원장을 관리합니다."
+        actions={
+          <Button type="button" onClick={() => setCreateModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            신규 거래처
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <MetricCard
+          label="전체 거래처"
+          value={`${formatCurrency(total)}개`}
+          description="현재 검색 조건 기준"
+          icon={Building2}
+        />
+        <MetricCard
+          label="활성 거래처"
+          value={`${formatCurrency(activeCount)}개`}
+          description="거래 가능한 상태"
+          icon={CircleCheck}
+          tone="success"
+        />
+        <MetricCard
+          label="비활성 거래처"
+          value={`${formatCurrency(Math.max(0, total - activeCount))}개`}
+          description="운영이 중지된 상태"
+          icon={CirclePause}
+          tone={total - activeCount > 0 ? "warning" : "default"}
+        />
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <CardTitle>거래처 관리</CardTitle>
-            <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
-              <div className="flex w-full gap-2 md:w-[360px]">
-                <Input
-                  placeholder="업체명 검색"
-                  value={keywordInput}
-                  onChange={(event) => setKeywordInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      setKeyword(keywordInput.trim());
-                      setPage(1);
-                    }
-                  }}
-                />
-                <Button
-                  type="button"
-                  className="whitespace-nowrap"
-                  onClick={() => {
-                    setKeyword(keywordInput.trim());
-                    setPage(1);
-                  }}
-                >
-                  <Search className="mr-1 h-4 w-4" /> 검색
-                </Button>
-              </div>
-
-              <Button type="button" onClick={handleCreateModalOpen}>
-                신규 거래처 등록
+      <FilterBar
+        footer={
+          keyword ? (
+            <div className="flex items-center justify-between gap-3">
+              <FilterChip label={`검색: ${keyword}`} onRemove={resetSearch} />
+              <Button type="button" variant="ghost" size="sm" onClick={resetSearch}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                초기화
               </Button>
             </div>
+          ) : (
+            <p className="text-sm font-medium text-slate-600">
+              업체명, 대표자명 또는 연락처로 검색할 수 있습니다.
+            </p>
+          )
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="vendor-keyword">거래처 검색</Label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              id="vendor-keyword"
+              className="sm:max-w-md"
+              placeholder="업체명, 대표자명 또는 연락처"
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleSearch();
+                }
+              }}
+            />
+            <Button type="button" onClick={handleSearch}>
+              <Search className="h-4 w-4" />
+              검색
+            </Button>
           </div>
-        </CardHeader>
+        </div>
+      </FilterBar>
 
-        <CardContent className="space-y-3">
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      <DataTableShell
+        title="거래처 목록"
+        description={`검색 결과 ${formatCurrency(total)}개`}
+        footer={
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            total={total}
+            pageSize={limit}
+          />
+        }
+      >
+        {error ? (
+          <ErrorState
+            title="거래처 목록을 불러오지 못했습니다."
+            description={error}
+            onRetry={() => void loadVendors()}
+          />
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[820px] text-sm">
+                <thead className="bg-slate-50/90 text-xs font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-5 py-3 text-left">업체명</th>
+                    <th className="px-5 py-3 text-left">대표자</th>
+                    <th className="px-5 py-3 text-left">연락처</th>
+                    <th className="px-5 py-3 text-right">이번 달 거래액</th>
+                    <th className="px-5 py-3 text-center">상태</th>
+                    <th className="px-5 py-3 text-right">관리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    Array.from({ length: 6 }).map((_, index) => (
+                      <tr key={index} className="border-t border-slate-100">
+                        {Array.from({ length: 6 }).map((__, cellIndex) => (
+                          <td key={cellIndex} className="px-5 py-3">
+                            <Skeleton className="h-5 w-full max-w-28" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : items.length ? (
+                    items.map((item) => (
+                      <tr
+                        key={item._id}
+                        className="cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50/80"
+                        onClick={() => router.push(`/dashboard/vendors/${item._id}`)}
+                      >
+                        <td className="px-5 py-3 font-semibold text-slate-900">
+                          {item.name}
+                        </td>
+                        <td className="px-5 py-3 text-slate-600">
+                          {item.representativeName || "-"}
+                        </td>
+                        <td className="px-5 py-3 text-slate-600 tabular-nums">
+                          {item.phone || "-"}
+                        </td>
+                        <td className="px-5 py-3 text-right font-semibold">
+                          <MoneyText value={item.thisMonthAmount} />
+                        </td>
+                        <td className="px-5 py-3 text-center">
+                          <StatusBadge tone={item.isActive ? "success" : "neutral"}>
+                            {item.isActive ? "활성" : "비활성"}
+                          </StatusBadge>
+                        </td>
+                        <td
+                          className="px-5 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setCreateModalOpen(false);
+                                setEditingVendor(item);
+                              }}
+                            >
+                              수정
+                            </Button>
+                            <Button asChild variant="ghost" size="sm">
+                              <Link href={`/dashboard/vendors/${item._id}`}>상세</Link>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() => setDeletingId(item._id)}
+                            >
+                              삭제
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6}>
+                        <EmptyState
+                          title="등록된 거래처가 없습니다."
+                          description="신규 거래처를 등록하거나 검색 조건을 변경해 주세요."
+                          action={
+                            <Button type="button" size="sm" onClick={() => setCreateModalOpen(true)}>
+                              <Plus className="h-4 w-4" />
+                              거래처 등록
+                            </Button>
+                          }
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>업체명</TableHead>
-                <TableHead className="text-right">이번 달 거래금액</TableHead>
-                <TableHead className="text-center">관리</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+            <div className="divide-y divide-slate-100 md:hidden">
               {loading ? (
                 Array.from({ length: 5 }).map((_, index) => (
-                  <TableRow key={index}>
-                    <TableCell><Skeleton className="h-6 w-32" /></TableCell>
-                    <TableCell className="text-right"><Skeleton className="h-6 w-20 ml-auto" /></TableCell>
-                    <TableCell><Skeleton className="h-6 w-20 mx-auto" /></TableCell>
-                  </TableRow>
+                  <div key={index} className="space-y-3 p-4">
+                    <Skeleton className="h-5 w-36" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-8 w-full" />
+                  </div>
                 ))
               ) : items.length ? (
                 items.map((item) => (
-                  <TableRow
-                    key={item._id}
-                    className="cursor-pointer hover:bg-slate-50"
-                    onClick={() =>
-                      router.push(`/dashboard/vendors/${item._id}`)
-                    }
-                  >
-                    <TableCell className="font-medium text-primary">
-                      {item.name}
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-slate-900">
-                      {formatCurrency(item.thisMonthAmount)}
-                    </TableCell>
-                    <TableCell
-                      className="text-center"
-                      onClick={(event) => event.stopPropagation()}
+                  <article key={item._id} className="space-y-3 p-4">
+                    <Link
+                      href={`/dashboard/vendors/${item._id}`}
+                      className="flex items-start justify-between gap-3"
                     >
-                      <div className="flex items-center justify-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditModalOpen(item)}
-                        >
-                          수정
-                        </Button>
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/dashboard/vendors/${item._id}`}>
-                            보기
-                          </Link>
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteClick(item._id)}
-                        >
-                          삭제
-                        </Button>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">{item.name}</h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {[item.representativeName, item.phone]
+                            .filter(Boolean)
+                            .join(" · ") || "연락처 정보 없음"}
+                        </p>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                      <StatusBadge tone={item.isActive ? "success" : "neutral"}>
+                        {item.isActive ? "활성" : "비활성"}
+                      </StatusBadge>
+                    </Link>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
+                      <span className="text-xs text-slate-500">이번 달 거래액</span>
+                      <MoneyText value={item.thisMonthAmount} className="text-sm font-bold" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setCreateModalOpen(false);
+                          setEditingVendor(item);
+                        }}
+                      >
+                        수정
+                      </Button>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/dashboard/vendors/${item._id}`}>상세</Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600"
+                        onClick={() => setDeletingId(item._id)}
+                      >
+                        삭제
+                      </Button>
+                    </div>
+                  </article>
                 ))
               ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="h-24 text-center text-slate-500"
-                  >
-                    등록된 거래처가 없습니다.
-                  </TableCell>
-                </TableRow>
+                <EmptyState
+                  title="등록된 거래처가 없습니다."
+                  description="신규 거래처를 등록하거나 검색 조건을 변경해 주세요."
+                />
               )}
-            </TableBody>
-          </Table>
-
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-        </CardContent>
-      </Card>
+            </div>
+          </>
+        )}
+      </DataTableShell>
 
       <VendorUpsertDialog
         open={isUpsertModalOpen}
@@ -370,17 +481,26 @@ export function VendorsScreen(): JSX.Element {
         onSuccess={handleUpsertSuccess}
       />
 
-      <AlertDialog open={Boolean(deletingId)} onOpenChange={(open) => !open && setDeletingId(null)}>
+      <AlertDialog
+        open={Boolean(deletingId)}
+        onOpenChange={(open) => !open && setDeletingId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>거래처 삭제</AlertDialogTitle>
             <AlertDialogDescription>
-              해당 거래처를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+              {deletingVendor
+                ? `"${deletingVendor.name}" 거래처를 삭제합니다. 기존 거래 내역은 유지되지만 거래처 목록에서는 더 이상 선택할 수 없습니다.`
+                : "선택한 거래처를 삭제합니다. 이 작업은 되돌릴 수 없습니다."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deletingId && void confirmDelete(deletingId)}>삭제</AlertDialogAction>
+            <AlertDialogAction
+              onClick={() => deletingId && void confirmDelete(deletingId)}
+            >
+              삭제
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

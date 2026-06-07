@@ -9,6 +9,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Pagination } from "@/components/ui/pagination";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Combobox } from "@/components/ui/combobox";
 import { buildQueryString, fetchJson } from "@/lib/client";
@@ -216,19 +217,11 @@ export function AuctionPurchasesScreen(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      {/* Premium Gradient Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-800 p-6 text-white shadow-lg">
-        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
-        <div className="absolute -bottom-10 right-20 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
-
-        <div className="flex flex-col justify-between md:flex-row md:items-center">
-          <div>
-            <span className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-sm">Nonghyup System Integration</span>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">농협 경매 매입 관리</h1>
-            <p className="mt-1 text-blue-100">농협 공판장 실시간 경매 낙찰 데이터를 동기화하고 매칭 상태를 검토합니다.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="매입 연동"
+        title="경매 매입"
+        description="농협 공판장 경매 낙찰 데이터를 동기화하고 상품 연결 및 금액 상태를 검토합니다."
+      />
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Pagination } from "@/components/ui/pagination";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Combobox } from "@/components/ui/combobox";
 import { fetchJson } from "@/lib/client";
@@ -220,28 +221,23 @@ export function ProductMappingsScreen(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      {/* Premium Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 p-6 text-white shadow-lg">
-        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
-        <div className="flex flex-col justify-between md:flex-row md:items-center">
-          <div>
-            <span className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-sm">Product Match Manager</span>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">농협 품목 코드 매칭</h1>
-            <p className="mt-1 text-teal-100">수집된 농협 공판장 품목 코드를 기존의 재고 관리용 상품 마스터와 연결합니다.</p>
-          </div>
+      <PageHeader
+        eyebrow="매입 연동"
+        title="품목 매칭"
+        description="수집된 농협 공판장 품목 코드를 재고 관리용 상품과 연결합니다."
+        actions={
           <Button
             onClick={() => {
               setFormNaLatc("");
               setFormProductId("");
               setIsManualOpen(true);
             }}
-            className="mt-4 md:mt-0 bg-white text-emerald-700 hover:bg-teal-50 font-bold shadow-md"
           >
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             수동 매핑 추가
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Side: Unmapped suggestions (2 cols) */}
