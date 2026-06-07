@@ -13,3 +13,17 @@ services:
     ports:
       - '3000:3000'
     restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node scripts/cron-scheduler.js
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Seoul
+      - APP_URL=http://app:3000
+    depends_on:
+      - app
+    restart: unless-stopped
