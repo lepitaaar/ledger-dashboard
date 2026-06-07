@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { DATE_KEY_FORMAT, getTodayDateKey } from "@/lib/kst";
 import { formatCurrency } from "@/lib/utils";
@@ -38,6 +39,12 @@ const presets = [
   { key: "1m", label: "최근 1달" },
   { key: "3m", label: "최근 3달" },
 ];
+const PROFIT_CIRCUMFERENCE = 2 * Math.PI * 80;
+const COVERAGE_CIRCUMFERENCE = 2 * Math.PI * 34;
+
+function clampRatio(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
 
 export function ProfitLossScreen(): JSX.Element {
   const today = getTodayDateKey();
@@ -49,6 +56,8 @@ export function ProfitLossScreen(): JSX.Element {
   // Filters
   const [startKey, setStartKey] = useState(oneMonthAgo);
   const [endKey, setEndKey] = useState(today);
+  const profitRatio = clampRatio(data?.profitMargin ?? 0);
+  const coverageRatio = clampRatio(data?.coverageRatio ?? 0);
 
   const loadProfitLoss = useCallback(async () => {
     setLoading(true);
@@ -89,17 +98,11 @@ export function ProfitLossScreen(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      {/* Premium Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-700 via-purple-700 to-pink-700 p-6 text-white shadow-lg">
-        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl"></div>
-        <div className="flex flex-col justify-between md:flex-row md:items-center">
-          <div>
-            <span className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-sm">Financial Analyzer</span>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight md:text-4xl">손익 및 마진 분석</h1>
-            <p className="mt-1 text-purple-100">이동평균 원가 원장을 기반으로 계산 가능한 실제 매출총이익과 수익 구조를 요약합니다.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="분석"
+        title="손익 분석"
+        description="이동평균 원가를 기준으로 매출, 원가, 예상 매출총이익과 데이터 반영률을 분석합니다."
+      />
 
       {/* Filters */}
       <Card className="border-border shadow-sm">
@@ -235,8 +238,13 @@ export function ProfitLossScreen(): JSX.Element {
                   </div>
 
                   {/* SVG Circle Gauge */}
-                  <div className="relative flex items-center justify-center h-48 w-48 mt-4">
-                    <svg className="absolute w-full h-full transform -rotate-90">
+                  <div className="relative mt-4 aspect-square w-48 shrink-0">
+                    <svg
+                      viewBox="0 0 192 192"
+                      className="absolute inset-0 h-full w-full -rotate-90 overflow-visible"
+                      role="img"
+                      aria-label={`예상 이익률 ${(data.profitMargin * 100).toFixed(1)}%`}
+                    >
                       <circle cx="96" cy="96" r="80" stroke="#f1f5f9" strokeWidth="16" fill="transparent" />
                       <circle
                         cx="96"
@@ -245,8 +253,8 @@ export function ProfitLossScreen(): JSX.Element {
                         stroke="url(#gradient)"
                         strokeWidth="16"
                         fill="transparent"
-                        strokeDasharray={`${2 * Math.PI * 80}`}
-                        strokeDashoffset={`${2 * Math.PI * 80 * (1 - Math.max(0, Math.min(1, data.profitMargin)))}`}
+                        strokeDasharray={PROFIT_CIRCUMFERENCE}
+                        strokeDashoffset={PROFIT_CIRCUMFERENCE * (1 - profitRatio)}
                         strokeLinecap="round"
                       />
                       <defs>
@@ -256,7 +264,7 @@ export function ProfitLossScreen(): JSX.Element {
                         </linearGradient>
                       </defs>
                     </svg>
-                    <div className="text-center z-10">
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center">
                       <div className="text-3xl font-black text-slate-800">{(data.profitMargin * 100).toFixed(1)}%</div>
                       <div className="text-xs text-slate-400 font-semibold mt-1">예상 이익률</div>
                     </div>
@@ -274,8 +282,13 @@ export function ProfitLossScreen(): JSX.Element {
               <CardContent className="p-6 space-y-6">
                 {/* SVG Progress Circle for Coverage */}
                 <div className="flex items-center gap-4">
-                  <div className="relative flex items-center justify-center h-20 w-20">
-                    <svg className="absolute w-full h-full transform -rotate-90">
+                  <div className="relative aspect-square w-20 shrink-0">
+                    <svg
+                      viewBox="0 0 80 80"
+                      className="absolute inset-0 h-full w-full -rotate-90 overflow-visible"
+                      role="img"
+                      aria-label={`원가 계산 포함률 ${(data.coverageRatio * 100).toFixed(0)}%`}
+                    >
                       <circle cx="40" cy="40" r="34" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
                       <circle
                         cx="40"
@@ -284,12 +297,12 @@ export function ProfitLossScreen(): JSX.Element {
                         stroke="#6366f1"
                         strokeWidth="8"
                         fill="transparent"
-                        strokeDasharray={`${2 * Math.PI * 34}`}
-                        strokeDashoffset={`${2 * Math.PI * 34 * (1 - data.coverageRatio)}`}
+                        strokeDasharray={COVERAGE_CIRCUMFERENCE}
+                        strokeDashoffset={COVERAGE_CIRCUMFERENCE * (1 - coverageRatio)}
                         strokeLinecap="round"
                       />
                     </svg>
-                    <div className="text-center z-10 text-sm font-extrabold text-indigo-700">
+                    <div className="absolute inset-0 z-10 flex items-center justify-center text-center text-sm font-extrabold text-indigo-700">
                       {(data.coverageRatio * 100).toFixed(0)}%
                     </div>
                   </div>
