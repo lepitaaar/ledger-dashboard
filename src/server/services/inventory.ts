@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { INVENTORY_BASELINE_DATE_KEY } from '@/lib/inventory';
 import { ProductModel } from '@/server/models/product';
 import { AuctionPurchaseModel } from '@/server/models/auction-purchase';
 import { TransactionModel } from '@/server/models/transaction';
@@ -15,7 +16,7 @@ interface CombinedMovement {
 }
 
 /**
- * 특정 상품에 대한 재고 원장(InventoryMovement)을 2026-01-01부터 다시 계산하여 DB에 저장합니다.
+ * 특정 상품에 대한 재고 원장(InventoryMovement)을 기준일부터 다시 계산하여 DB에 저장합니다.
  */
 export async function recalculateInventory(productId: string | Types.ObjectId): Promise<void> {
   const prodId = new Types.ObjectId(productId);
@@ -47,7 +48,7 @@ export async function recalculateInventory(productId: string | Types.ObjectId): 
       productId: prodId,
       type: 'initial',
       referenceId: null,
-      dateKey: '2026-01-01',
+      dateKey: INVENTORY_BASELINE_DATE_KEY,
       timeKey: '00:00:00',
       qtyChange: initialQty,
       unitPrice: initialCost,
@@ -59,18 +60,18 @@ export async function recalculateInventory(productId: string | Types.ObjectId): 
     });
   }
 
-  // 3. 경매 매입 내역 로드 (2026-01-01 이후, 활성)
+  // 3. 기준일 이후 경매 매입 내역 로드
   const purchases = await AuctionPurchaseModel.find({
     productId: prodId,
     isActive: true,
-    dateKey: { $gte: '2026-01-01' }
+    dateKey: { $gte: INVENTORY_BASELINE_DATE_KEY }
   }).lean();
 
-  // 4. 매출/반품 거래 내역 로드 (2026-01-01 이후, 비삭제)
+  // 4. 기준일 이후 매출/반품 거래 내역 로드
   const transactions = await TransactionModel.find({
     productId: prodId,
     deletedAt: null,
-    dateKey: { $gte: '2026-01-01' }
+    dateKey: { $gte: INVENTORY_BASELINE_DATE_KEY }
   }).lean();
 
   // 5. 정렬 가능한 통합 이동 리스트 생성

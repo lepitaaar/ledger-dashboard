@@ -9,6 +9,7 @@ import { getTodayDateKey } from '@/lib/kst';
 import { dateKeySchema } from '@/lib/dto/common';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {

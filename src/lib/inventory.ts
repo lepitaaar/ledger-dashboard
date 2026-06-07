@@ -1,0 +1,2 @@
+export const INVENTORY_BASELINE_DATE_KEY =
+  process.env.INVENTORY_BASELINE_DATE_KEY ?? "2026-01-01";
