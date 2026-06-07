@@ -276,8 +276,8 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
     <title>거래명세서 인쇄</title>
     <style>
       @page {
-        size: A5 portrait;
-        margin: 4mm;
+        size: 148mm 210mm;
+        margin: 5mm;
       }
 
       * {
@@ -297,7 +297,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
 
       .sheet {
         width: 138mm;
-        height: 198mm;
+        height: 200mm;
         margin: 0 auto;
         overflow: hidden;
         break-inside: avoid;
@@ -463,7 +463,8 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       }
 
       .items-table tbody td {
-        height: 5.05mm;
+        height: 5.85mm;
+        font-size: 12pt;
       }
 
       .items-table .item-name {
@@ -498,7 +499,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       @media print {
         html,
         body {
-          width: 148mm;
+          width: auto;
           height: auto;
         }
 

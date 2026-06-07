@@ -53,7 +53,11 @@ describe("buildSettlementPrintHtml", () => {
     expect(html).toContain("대파");
     expect(html).toContain("10kg");
     expect(html).toContain("width: 138mm");
-    expect(html).toContain("height: 198mm");
+    expect(html).toContain("size: 148mm 210mm");
+    expect(html).toContain("margin: 5mm");
+    expect(html).toContain("height: 200mm");
+    expect(html).toContain("width: auto");
+    expect(html).not.toContain("width: 148mm");
     expect(html).not.toContain("min-height: 202mm");
     expect(html).toContain("window.print()");
     expect(html).not.toContain("window.close()");
