@@ -216,7 +216,12 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                         {item.dateKey}
                       </td>
                       <td className="px-5 py-3 font-medium text-slate-900">
-                        {item.vendorName}
+                        <Link
+                          href={`/dashboard/vendors/${item.vendorId}`}
+                          className="font-semibold hover:text-primary hover:underline"
+                        >
+                          {item.vendorName}
+                        </Link>
                       </td>
                       <td className="max-w-60 truncate px-5 py-3 text-slate-600">
                         {item.productName}
@@ -248,7 +253,12 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 <div key={item._id} className="space-y-2 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">{item.vendorName}</p>
+                      <Link
+                        href={`/dashboard/vendors/${item.vendorId}`}
+                        className="text-sm font-semibold text-slate-900 hover:text-primary hover:underline"
+                      >
+                        {item.vendorName}
+                      </Link>
                       <p className="mt-0.5 text-xs text-slate-500">{item.productName}</p>
                     </div>
                     <MoneyText value={item.amount} className="text-sm font-bold" />

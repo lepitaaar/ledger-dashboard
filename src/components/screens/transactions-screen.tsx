@@ -29,7 +29,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/state-panel";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import {
   getDateRangeByPreset,
@@ -107,22 +106,6 @@ function normalizeRange(
   return startKey <= endKey
     ? { startKey, endKey }
     : { startKey: endKey, endKey: startKey };
-}
-
-function getProfitStatus(row: TransactionRow): {
-  label: string;
-  tone: "neutral" | "success" | "danger" | "warning";
-} {
-  if (row.expectedProfit !== null) {
-    return {
-      label: row.expectedProfit < 0 ? "손실" : "이익 반영",
-      tone: row.expectedProfit < 0 ? "danger" : "success",
-    };
-  }
-
-  return row.movementStatus === "insufficient_inventory"
-    ? { label: "재고 부족", tone: "danger" }
-    : { label: "원가 미연결", tone: "warning" };
 }
 
 export function TransactionsScreen({
@@ -334,7 +317,7 @@ export function TransactionsScreen({
       <PageHeader
         eyebrow="매출 관리"
         title="거래 조회"
-        description="기간과 거래처, 상품 조건으로 거래를 조회하고 매출과 예상 이익을 확인합니다."
+        description="기간과 거래처, 상품 조건으로 거래를 조회하고 매출 내역을 확인합니다."
         actions={
           <Button
             type="button"
@@ -522,7 +505,7 @@ export function TransactionsScreen({
         ) : (
           <>
             <div className="hidden max-h-[720px] overflow-auto md:block">
-              <table className="w-full min-w-[1050px] text-sm">
+              <table className="w-full min-w-[820px] text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-semibold text-slate-600 shadow-[0_1px_0_0_#e2e8f0]">
                   <tr>
                     <th className="px-4 py-3 text-left">날짜</th>
@@ -531,8 +514,6 @@ export function TransactionsScreen({
                     <th className="px-4 py-3 text-right">단가</th>
                     <th className="px-4 py-3 text-right">수량</th>
                     <th className="px-4 py-3 text-right">매출액</th>
-                    <th className="px-4 py-3 text-right">예상 이익</th>
-                    <th className="px-4 py-3 text-center">원가 상태</th>
                     <th className="px-4 py-3 text-left">등록 시간</th>
                   </tr>
                 </thead>
@@ -540,7 +521,7 @@ export function TransactionsScreen({
                   {loading ? (
                     Array.from({ length: 7 }).map((_, index) => (
                       <tr key={index} className="border-t border-slate-100">
-                        {Array.from({ length: 9 }).map((__, cellIndex) => (
+                        {Array.from({ length: 7 }).map((__, cellIndex) => (
                           <td key={cellIndex} className="px-4 py-3">
                             <Skeleton className="h-5 w-full max-w-28" />
                           </td>
@@ -548,14 +529,7 @@ export function TransactionsScreen({
                       </tr>
                     ))
                   ) : rows.length ? (
-                    rows.map((row) => {
-                      const profitStatus = getProfitStatus(row);
-                      const margin =
-                        row.expectedProfit !== null && row.amount !== 0
-                          ? (row.expectedProfit / row.amount) * 100
-                          : null;
-
-                      return (
+                    rows.map((row) => (
                         <tr
                           key={row._id}
                           className="border-t border-slate-100 transition-colors hover:bg-slate-50/80"
@@ -580,12 +554,6 @@ export function TransactionsScreen({
                                 </span>
                               ) : null}
                             </p>
-                            <StatusBadge
-                              tone={row.productId ? "success" : "warning"}
-                              className="mt-1"
-                            >
-                              {row.productId ? "상품 매칭" : "상품 미매칭"}
-                            </StatusBadge>
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">
                             {formatCurrency(row.unitPrice)}
@@ -596,36 +564,14 @@ export function TransactionsScreen({
                           <td className="px-4 py-3 text-right font-bold">
                             <MoneyText value={row.amount} suffix="" />
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            {row.expectedProfit === null ? (
-                              <span className="text-slate-400">-</span>
-                            ) : (
-                              <>
-                                <MoneyText
-                                  value={row.expectedProfit}
-                                  suffix=""
-                                  className="font-semibold"
-                                />
-                                <span className="ml-1 text-xs text-slate-400 tabular-nums">
-                                  {margin?.toFixed(1)}%
-                                </span>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <StatusBadge tone={profitStatus.tone}>
-                              {profitStatus.label}
-                            </StatusBadge>
-                          </td>
                           <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
                             {row.registeredTimeKST}
                           </td>
                         </tr>
-                      );
-                    })
+                    ))
                   ) : (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={7}>
                         <EmptyState
                           title="조회된 거래가 없습니다."
                           description="기간이나 검색 조건을 변경해 다시 조회해 보세요."
@@ -647,10 +593,7 @@ export function TransactionsScreen({
                   </div>
                 ))
               ) : rows.length ? (
-                rows.map((row) => {
-                  const profitStatus = getProfitStatus(row);
-
-                  return (
+                rows.map((row) => (
                     <article key={row._id} className="space-y-3 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -667,7 +610,7 @@ export function TransactionsScreen({
                         </div>
                         <MoneyText value={row.amount} className="text-sm font-bold" />
                       </div>
-                      <dl className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-3">
+                      <dl className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
                         <div>
                           <dt className="text-[11px] text-slate-400">단가</dt>
                           <dd className="mt-0.5 text-xs font-semibold tabular-nums">
@@ -680,28 +623,12 @@ export function TransactionsScreen({
                             {formatCurrency(row.qty)}
                           </dd>
                         </div>
-                        <div>
-                          <dt className="text-[11px] text-slate-400">예상 이익</dt>
-                          <dd className="mt-0.5 text-xs font-semibold">
-                            {row.expectedProfit === null ? (
-                              "-"
-                            ) : (
-                              <MoneyText value={row.expectedProfit} suffix="" />
-                            )}
-                          </dd>
-                        </div>
                       </dl>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-slate-400">
-                          {row.dateKey} · {row.registeredTimeKST}
-                        </span>
-                        <StatusBadge tone={profitStatus.tone}>
-                          {profitStatus.label}
-                        </StatusBadge>
-                      </div>
+                      <p className="text-xs text-slate-400">
+                        {row.dateKey} · {row.registeredTimeKST}
+                      </p>
                     </article>
-                  );
-                })
+                ))
               ) : (
                 <EmptyState
                   title="조회된 거래가 없습니다."

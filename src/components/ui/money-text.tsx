@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatWon } from "@/lib/utils";
 
 type MoneyTextProps = HTMLAttributes<HTMLSpanElement> & {
   value: number;
@@ -27,7 +27,7 @@ export function MoneyText({
       {...props}
     >
       {sign}
-      {formatCurrency(value)}
+      {formatWon(value)}
       {suffix ? ` ${suffix}` : ""}
     </span>
   );

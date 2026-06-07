@@ -9,6 +9,12 @@ export function formatCurrency(value: number): string {
   return new Intl.NumberFormat('ko-KR').format(value);
 }
 
+export function formatWon(value: number): string {
+  return new Intl.NumberFormat('ko-KR', {
+    maximumFractionDigits: 0
+  }).format(Math.round(value));
+}
+
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

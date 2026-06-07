@@ -34,7 +34,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/state-panel";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { VendorUpsertDialog } from "@/components/vendors/vendor-upsert-dialog";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { formatCurrency } from "@/lib/utils";
@@ -303,7 +302,6 @@ export function VendorsScreen(): JSX.Element {
                     <th className="px-5 py-3 text-left">대표자</th>
                     <th className="px-5 py-3 text-left">연락처</th>
                     <th className="px-5 py-3 text-right">이번 달 거래액</th>
-                    <th className="px-5 py-3 text-center">상태</th>
                     <th className="px-5 py-3 text-right">관리</th>
                   </tr>
                 </thead>
@@ -311,7 +309,7 @@ export function VendorsScreen(): JSX.Element {
                   {loading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <tr key={index} className="border-t border-slate-100">
-                        {Array.from({ length: 6 }).map((__, cellIndex) => (
+                        {Array.from({ length: 5 }).map((__, cellIndex) => (
                           <td key={cellIndex} className="px-5 py-3">
                             <Skeleton className="h-5 w-full max-w-28" />
                           </td>
@@ -336,11 +334,6 @@ export function VendorsScreen(): JSX.Element {
                         </td>
                         <td className="px-5 py-3 text-right font-semibold">
                           <MoneyText value={item.thisMonthAmount} />
-                        </td>
-                        <td className="px-5 py-3 text-center">
-                          <StatusBadge tone={item.isActive ? "success" : "neutral"}>
-                            {item.isActive ? "활성" : "비활성"}
-                          </StatusBadge>
                         </td>
                         <td
                           className="px-5 py-3"
@@ -376,7 +369,7 @@ export function VendorsScreen(): JSX.Element {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={5}>
                         <EmptyState
                           title="등록된 거래처가 없습니다."
                           description="신규 거래처를 등록하거나 검색 조건을 변경해 주세요."
@@ -418,9 +411,6 @@ export function VendorsScreen(): JSX.Element {
                             .join(" · ") || "연락처 정보 없음"}
                         </p>
                       </div>
-                      <StatusBadge tone={item.isActive ? "success" : "neutral"}>
-                        {item.isActive ? "활성" : "비활성"}
-                      </StatusBadge>
                     </Link>
                     <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
                       <span className="text-xs text-slate-500">이번 달 거래액</span>
