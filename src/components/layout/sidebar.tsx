@@ -9,7 +9,11 @@ const menuItems: Array<{ href: string; label: string }> = [
   { href: '/dashboard/products', label: '상품관리' },
   { href: '/dashboard/vendors', label: '거래처 관리' },
   { href: '/dashboard/transactions', label: '거래 조회' },
-  { href: '/dashboard/settlements', label: '계산서' }
+  { href: '/dashboard/settlements', label: '계산서' },
+  { href: '/dashboard/auction-purchases', label: '경매 매입' },
+  { href: '/dashboard/product-mappings', label: '품목 매칭' },
+  { href: '/dashboard/inventory', label: '재고 현황' },
+  { href: '/dashboard/profit-loss', label: '손익 분석' }
 ];
 
 export function Sidebar(): JSX.Element {

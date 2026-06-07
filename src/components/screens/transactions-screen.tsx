@@ -35,12 +35,15 @@ type TransactionRow = {
   dateKey: string;
   vendorId: string;
   vendorName: string;
+  productId: string | null;
   productName: string;
   productUnit?: string;
   unitPrice: number;
   qty: number;
   amount: number;
   registeredTimeKST: string;
+  expectedProfit: number | null;
+  movementStatus: 'normal' | 'insufficient_inventory' | 'unmapped';
 };
 
 type TransactionListResponse = {
@@ -463,6 +466,12 @@ export function TransactionsScreen({
                   </th>
                   <th
                     rowSpan={2}
+                    className="border border-slate-200 px-3 py-3 text-right"
+                  >
+                    예상 이익 (이익률)
+                  </th>
+                  <th
+                    rowSpan={2}
                     className="border border-slate-200 px-3 py-3 text-left"
                   >
                     등록한 시간
@@ -490,6 +499,7 @@ export function TransactionsScreen({
                       <td className="border border-slate-200 px-3 py-2 text-right"><Skeleton className="h-5 w-16 ml-auto" /></td>
                       <td className="border border-slate-200 px-3 py-2 text-center"><Skeleton className="h-5 w-12 mx-auto" /></td>
                       <td className="border border-slate-200 px-3 py-2 text-right"><Skeleton className="h-5 w-20 ml-auto" /></td>
+                      <td className="border border-slate-200 px-3 py-2 text-right"><Skeleton className="h-5 w-24 ml-auto" /></td>
                       <td className="border border-slate-200 px-3 py-2"><Skeleton className="h-5 w-28" /></td>
                     </tr>
                   ))
@@ -508,8 +518,17 @@ export function TransactionsScreen({
                         </Link>
                       </td>
                       <td className="border border-slate-200 px-3 py-2 text-slate-800">
-                        {row.productName}
-                        {row.productUnit ? ` (${row.productUnit})` : ""}
+                        <div className="flex flex-col gap-0.5">
+                          <div>
+                            {row.productName}
+                            {row.productUnit ? ` (${row.productUnit})` : ""}
+                          </div>
+                          {row.productId ? (
+                            <span className="text-[10px] text-emerald-600 font-semibold">● 매칭 완료</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">○ 미매칭</span>
+                          )}
+                        </div>
                       </td>
                       <td className="border border-slate-200 px-3 py-2 text-right">
                         {formatCurrency(row.unitPrice)}
@@ -524,6 +543,30 @@ export function TransactionsScreen({
                       >
                         {formatCurrency(row.amount)}
                       </td>
+                      <td
+                        className={`border border-slate-200 px-3 py-2 text-right font-semibold ${
+                          row.expectedProfit === null
+                            ? "text-slate-400 italic"
+                            : row.expectedProfit < 0
+                            ? "text-red-600"
+                            : "text-green-700"
+                        }`}
+                      >
+                        {row.expectedProfit === null ? (
+                          row.movementStatus === 'insufficient_inventory' ? (
+                            <span className="text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-200">재고 부족</span>
+                          ) : (
+                            <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200">미연결</span>
+                          )
+                        ) : (
+                          <div className="flex flex-col items-end">
+                            <span>{formatCurrency(row.expectedProfit)}</span>
+                            <span className="text-[10px] text-slate-500 font-normal">
+                              ({row.amount !== 0 ? ((row.expectedProfit / row.amount) * 100).toFixed(0) : 0}%)
+                            </span>
+                          </div>
+                        )}
+                      </td>
                       <td className="border border-slate-200 px-3 py-2 text-xs text-slate-500">
                         {row.registeredTimeKST}
                       </td>
@@ -532,7 +575,7 @@ export function TransactionsScreen({
                 ) : (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="h-24 border border-slate-200 text-center text-slate-500"
                     >
                       조회된 거래가 없습니다.
@@ -551,6 +594,7 @@ export function TransactionsScreen({
                   <td className="border border-slate-200 px-3 py-3 text-right text-base font-bold text-primary">
                     {formatCurrency(periodTotalAmount)}
                   </td>
+                  <td className="border border-slate-200" />
                   <td className="border border-slate-200" />
                 </tr>
               </tfoot>
