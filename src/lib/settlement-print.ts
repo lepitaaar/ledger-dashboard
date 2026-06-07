@@ -340,6 +340,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       .date-table th {
         width: 12%;
         height: 7mm;
+        border-top: 0;
         border-right: 0;
       }
 
@@ -347,6 +348,8 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         text-align: left;
         padding-left: 5mm;
         font-weight: 700;
+        border-top: 0;
+        font-size: 10.5pt;
       }
 
       .date-table td:not(.page-number) {
@@ -366,11 +369,16 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       .party-grid {
         display: grid;
         grid-template-columns: 38% 62%;
-        margin-top: -0.35mm;
+        margin-top: 0;
       }
 
       .party-grid table {
         height: 31mm;
+      }
+
+      .party-grid tr:first-child > th,
+      .party-grid tr:first-child > td {
+        border-top: 0;
       }
 
       .recipient-table {
@@ -425,7 +433,12 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       }
 
       .amount-table {
-        margin-top: -0.35mm;
+        margin-top: 0;
+      }
+
+      .amount-table tr:first-child > th,
+      .amount-table tr:first-child > td {
+        border-top: 0;
       }
 
       .amount-table th {
@@ -461,7 +474,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       }
 
       .items-table tbody td {
-        height: 5.95mm;
+        height: 6.5mm;
         font-size: 12pt;
       }
 
@@ -491,7 +504,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         border: 0.35mm solid #000;
         border-top: 0;
         padding: 1mm 4mm;
-        font-size: 9pt;
+        font-size: 12pt;
         font-weight: 700;
       }
 
