@@ -119,8 +119,17 @@ function buildInventoryLookupStages(): PipelineStage[] {
     {
       $lookup: {
         from: 'inventorymovements',
-        localField: '_id',
-        foreignField: 'referenceId',
+        let: { transactionId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$referenceId', '$$transactionId'] },
+              type: { $in: ['sale', 'return'] }
+            }
+          },
+          { $sort: { updatedAt: -1, _id: -1 } },
+          { $limit: 1 }
+        ],
         as: 'movement'
       }
     },
