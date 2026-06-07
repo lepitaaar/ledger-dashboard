@@ -204,8 +204,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                   <th className="px-5 py-3 text-left">날짜</th>
                   <th className="px-5 py-3 text-left">거래처</th>
                   <th className="px-5 py-3 text-left">상품</th>
-                  <th className="px-5 py-3 text-right">매출액</th>
-                  <th className="px-5 py-3 text-center">상태</th>
+                  <th className="px-5 py-3 text-center">매출액</th>
                 </tr>
               </thead>
               <tbody>
@@ -226,13 +225,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                       <td className="max-w-60 truncate px-5 py-3 text-slate-600">
                         {item.productName}
                       </td>
-                      <td className="px-5 py-3 text-right font-semibold">
+                      <td className="px-5 py-3 text-center font-semibold">
                         <MoneyText value={item.amount} suffix="" />
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        <StatusBadge tone={item.productId ? "success" : "warning"}>
-                          {item.productId ? "매칭 완료" : "미매칭"}
-                        </StatusBadge>
                       </td>
                     </tr>
                   ))
