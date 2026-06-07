@@ -21,6 +21,8 @@ type ProductRow = {
   _id: unknown;
   name: string;
   unit?: string;
+  initialQty?: number;
+  initialCost?: number;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -31,6 +33,8 @@ function mapProduct(product: ProductRow): Record<string, unknown> {
     _id: String(product._id),
     name: product.name,
     unit: product.unit,
+    initialQty: product.initialQty || 0,
+    initialCost: product.initialCost || 0,
     deletedAt: product.deletedAt,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
@@ -84,7 +88,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const created = await ProductModel.create({
       name: body.name,
       unit: body.unit || undefined,
+      initialQty: body.initialQty || 0,
+      initialCost: body.initialCost || 0,
     });
+
+    const { recalculateInventory } = await import("@/server/services/inventory");
+    await recalculateInventory(created._id);
 
     await writeAuditLog({
       action: "create",
@@ -127,7 +136,23 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       product.unit = body.unit;
     }
 
+    let isInitialChanged = false;
+    if (body.initialQty !== undefined && body.initialQty !== product.initialQty) {
+      product.initialQty = body.initialQty;
+      isInitialChanged = true;
+    }
+
+    if (body.initialCost !== undefined && body.initialCost !== product.initialCost) {
+      product.initialCost = body.initialCost;
+      isInitialChanged = true;
+    }
+
     await product.save();
+
+    if (isInitialChanged) {
+      const { recalculateInventory } = await import("@/server/services/inventory");
+      await recalculateInventory(product._id);
+    }
 
     await writeAuditLog({
       action: "update",

@@ -4,3 +4,8 @@ export * from '@/server/models/product';
 export * from '@/server/models/settlement';
 export * from '@/server/models/transaction';
 export * from '@/server/models/vendor';
+export * from '@/server/models/auction-purchase';
+export * from '@/server/models/auction-sync-run';
+export * from '@/server/models/auction-product-mapping';
+export * from '@/server/models/inventory-movement';
+export * from '@/server/models/auction-sync-lock';

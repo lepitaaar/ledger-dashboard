@@ -5,6 +5,7 @@ import { dateKeySchema, objectIdSchema, queryBooleanSchema, queryNumberSchema, t
 const baseTransactionSchema = {
   dateKey: dateKeySchema,
   vendorId: objectIdSchema,
+  productId: objectIdSchema.optional().nullable(),
   productName: z.string().trim().min(1, '상품명은 필수입니다.').max(200),
   productUnit: z.string().trim().max(50).optional(),
   unitPrice: z.coerce.number().finite().min(0, '단가는 0 이상이어야 합니다.'),
@@ -19,6 +20,7 @@ export const transactionUpdateSchema = z
     id: objectIdSchema,
     dateKey: dateKeySchema.optional(),
     vendorId: objectIdSchema.optional(),
+    productId: objectIdSchema.optional().nullable(),
     productName: z.string().trim().min(1).max(200).optional(),
     productUnit: z.string().trim().max(50).optional(),
     unitPrice: z.coerce.number().finite().min(0).optional(),
@@ -29,6 +31,7 @@ export const transactionUpdateSchema = z
     const hasUpdatableField =
       value.dateKey !== undefined ||
       value.vendorId !== undefined ||
+      value.productId !== undefined ||
       value.productName !== undefined ||
       value.productUnit !== undefined ||
       value.unitPrice !== undefined ||

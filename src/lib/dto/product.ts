@@ -9,12 +9,16 @@ import {
 export const productCreateSchema = z.object({
   name: z.string().trim().min(1, "상품명은 필수입니다.").max(120),
   unit: z.string().trim().max(50).optional(),
+  initialQty: z.coerce.number().finite().min(0).optional(),
+  initialCost: z.coerce.number().finite().min(0).optional(),
 });
 
 export const productUpdateSchema = z.object({
   id: objectIdSchema,
   name: z.string().trim().min(1).max(120).optional(),
   unit: z.string().trim().max(50).optional(),
+  initialQty: z.coerce.number().finite().min(0).optional(),
+  initialCost: z.coerce.number().finite().min(0).optional(),
 });
 
 export const productDeleteSchema = z.object({

@@ -78,9 +78,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new HttpError(404, '업체를 찾을 수 없습니다.');
     }
 
+    let finalProductId = body.productId ? new Types.ObjectId(body.productId) : null;
+    if (!finalProductId) {
+      const { ProductModel } = await import('@/server/models/product');
+      const matchedProduct = await ProductModel.findOne({
+        name: body.productName,
+        unit: body.productUnit || undefined,
+        deletedAt: null
+      });
+      if (matchedProduct) {
+        finalProductId = matchedProduct._id;
+      }
+    }
+
     const created = await TransactionModel.create({
       dateKey: body.dateKey,
       vendorId: new Types.ObjectId(body.vendorId),
+      productId: finalProductId,
       productName: body.productName,
       productUnit: body.productUnit,
       unitPrice: body.unitPrice,
@@ -88,6 +102,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       amount: calculateAmount(body.unitPrice, body.qty),
       registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
     });
+
+    if (created.productId) {
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      await recalculateInventory(created.productId);
+    }
 
     await writeAuditLog({
       action: 'create',
@@ -129,38 +148,67 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }
 
     const before = transaction.toObject();
+    const oldProductId = transaction.productId;
+    let isValueFieldChanged = false;
+    let isMappingChanged = false;
 
-    if (body.dateKey !== undefined) {
+    if (body.dateKey !== undefined && body.dateKey !== transaction.dateKey) {
       transaction.dateKey = body.dateKey;
+      isValueFieldChanged = true;
     }
 
     if (body.vendorId !== undefined) {
       transaction.vendorId = new Types.ObjectId(body.vendorId);
     }
 
-    if (body.productName !== undefined) {
+    if (body.productId !== undefined) {
+      const newPid = body.productId ? new Types.ObjectId(body.productId) : null;
+      if (String(newPid) !== String(oldProductId)) {
+        transaction.productId = newPid;
+        isMappingChanged = true;
+      }
+    }
+
+    if (body.productName !== undefined && body.productName !== transaction.productName) {
       transaction.productName = body.productName;
+      isValueFieldChanged = true;
     }
 
-    if (body.productUnit !== undefined) {
+    if (body.productUnit !== undefined && body.productUnit !== transaction.productUnit) {
       transaction.productUnit = body.productUnit;
+      isValueFieldChanged = true;
     }
 
-    if (body.unitPrice !== undefined) {
+    if (body.unitPrice !== undefined && body.unitPrice !== transaction.unitPrice) {
       transaction.unitPrice = body.unitPrice;
+      isValueFieldChanged = true;
     }
 
-    if (body.qty !== undefined) {
+    if (body.qty !== undefined && body.qty !== transaction.qty) {
       transaction.qty = body.qty;
+      isValueFieldChanged = true;
     }
 
-    if (body.registeredTimeKST !== undefined) {
+    if (body.registeredTimeKST !== undefined && body.registeredTimeKST !== transaction.registeredTimeKST) {
       transaction.registeredTimeKST = body.registeredTimeKST;
+      isValueFieldChanged = true;
     }
 
     transaction.amount = calculateAmount(transaction.unitPrice, transaction.qty);
 
     await transaction.save();
+
+    // 재고 변동 재계산 트리거
+    const affectedIds = new Set<string>();
+    if (oldProductId) affectedIds.add(String(oldProductId));
+    if (transaction.productId) affectedIds.add(String(transaction.productId));
+
+    if (affectedIds.size > 0 && (isMappingChanged || isValueFieldChanged)) {
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      for (const pid of affectedIds) {
+        await recalculateInventory(pid);
+      }
+    }
 
     await writeAuditLog({
       action: 'update',
@@ -195,6 +243,12 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
 
     transaction.deletedAt = new Date();
     await transaction.save();
+
+    // 삭제된 매출 건에 대해서도 재고 원장 재계산
+    if (transaction.productId) {
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      await recalculateInventory(transaction.productId);
+    }
 
     await writeAuditLog({
       action: 'delete',

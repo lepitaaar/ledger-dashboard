@@ -18,12 +18,15 @@ export type TransactionListItem = {
   dateKey: string;
   vendorId: string;
   vendorName: string;
+  productId: string | null;
   productName: string;
   productUnit: string;
   unitPrice: number;
   qty: number;
   amount: number;
   registeredTimeKST: string;
+  expectedProfit: number | null;
+  movementStatus: 'normal' | 'insufficient_inventory' | 'unmapped';
   createdAt: string;
   updatedAt: string;
 };
@@ -93,12 +96,15 @@ function mapTransactionItem(row: Record<string, unknown>): TransactionListItem {
     dateKey: String(row.dateKey),
     vendorId: String(row.vendorId),
     vendorName: String(row.vendorName ?? '-'),
+    productId: row.productId ? String(row.productId) : null,
     productName: String(row.productName),
     productUnit: String(row.productUnit ?? ''),
     unitPrice: Number(row.unitPrice),
     qty: Number(row.qty),
     amount: Number(row.amount),
     registeredTimeKST: String(row.registeredTimeKST),
+    expectedProfit: row.expectedProfit !== undefined && row.expectedProfit !== null ? Number(row.expectedProfit) : null,
+    movementStatus: (row.movementStatus as 'normal' | 'insufficient_inventory' | 'unmapped') || 'unmapped',
     createdAt: new Date(String(row.createdAt)).toISOString(),
     updatedAt: new Date(String(row.updatedAt)).toISOString()
   };
@@ -108,6 +114,25 @@ export function calculateAmount(unitPrice: number, qty: number): number {
   return Number((unitPrice * qty).toFixed(2));
 }
 
+function buildInventoryLookupStages(): PipelineStage[] {
+  return [
+    {
+      $lookup: {
+        from: 'inventorymovements',
+        localField: '_id',
+        foreignField: 'referenceId',
+        as: 'movement'
+      }
+    },
+    {
+      $unwind: {
+        path: '$movement',
+        preserveNullAndEmptyArrays: true
+      }
+    }
+  ];
+}
+
 export async function listTransactions(
   filters: TransactionQueryFilter,
   inputPagination: { page?: number; limit?: number }
@@ -115,10 +140,12 @@ export async function listTransactions(
   const { page, limit, skip } = normalizePagination(inputPagination.page, inputPagination.limit);
   const baseMatch = buildBaseMatch(filters);
   const lookupStages = buildLookupAndKeywordStages(filters.keyword);
+  const invLookupStages = buildInventoryLookupStages();
 
   const [result] = await TransactionModel.aggregate([
     { $match: baseMatch },
     ...lookupStages,
+    ...invLookupStages,
     { $sort: { dateKey: -1, registeredTimeKST: -1, createdAt: -1 } },
     {
       $facet: {
@@ -131,12 +158,27 @@ export async function listTransactions(
               dateKey: 1,
               vendorId: 1,
               vendorName: { $ifNull: ['$vendor.name', '삭제된 업체'] },
+              productId: 1,
               productName: 1,
               productUnit: 1,
               unitPrice: 1,
               qty: 1,
               amount: 1,
               registeredTimeKST: 1,
+              expectedProfit: {
+                $cond: {
+                  if: {
+                    $and: [
+                      { $not: { $eq: ['$productId', null] } },
+                      { $not: { $eq: ['$movement', null] } },
+                      { $eq: ['$movement.status', 'normal'] }
+                    ]
+                  },
+                  then: { $add: ['$amount', { $multiply: ['$movement.qtyChange', '$movement.costApplied'] }] },
+                  else: null
+                }
+              },
+              movementStatus: { $ifNull: ['$movement.status', 'unmapped'] },
               createdAt: 1,
               updatedAt: 1
             }
@@ -171,10 +213,12 @@ export async function listTransactions(
 export async function listTransactionsForExport(filters: TransactionQueryFilter): Promise<TransactionListItem[]> {
   const baseMatch = buildBaseMatch(filters);
   const lookupStages = buildLookupAndKeywordStages(filters.keyword);
+  const invLookupStages = buildInventoryLookupStages();
 
   const rows = await TransactionModel.aggregate([
     { $match: baseMatch },
     ...lookupStages,
+    ...invLookupStages,
     { $sort: { dateKey: -1, registeredTimeKST: -1, createdAt: -1 } },
     {
       $project: {
@@ -182,12 +226,27 @@ export async function listTransactionsForExport(filters: TransactionQueryFilter)
         dateKey: 1,
         vendorId: 1,
         vendorName: { $ifNull: ['$vendor.name', '삭제된 업체'] },
+        productId: 1,
         productName: 1,
         productUnit: 1,
         unitPrice: 1,
         qty: 1,
         amount: 1,
         registeredTimeKST: 1,
+        expectedProfit: {
+          $cond: {
+            if: {
+              $and: [
+                { $not: { $eq: ['$productId', null] } },
+                { $not: { $eq: ['$movement', null] } },
+                { $eq: ['$movement.status', 'normal'] }
+              ]
+            },
+            then: { $add: ['$amount', { $multiply: ['$movement.qtyChange', '$movement.costApplied'] }] },
+            else: null
+          }
+        },
+        movementStatus: { $ifNull: ['$movement.status', 'unmapped'] },
         createdAt: 1,
         updatedAt: 1
       }

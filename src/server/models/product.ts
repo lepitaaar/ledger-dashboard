@@ -4,6 +4,8 @@ export interface Product {
   _id: Types.ObjectId;
   name: string;
   unit?: string;
+  initialQty?: number;
+  initialCost?: number;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -13,6 +15,8 @@ const productSchema = new Schema<Product>(
   {
     name: { type: String, required: true, trim: true },
     unit: { type: String, trim: true },
+    initialQty: { type: Number, default: 0 },
+    initialCost: { type: Number, default: 0 },
     deletedAt: { type: Date, default: null },
   },
   {

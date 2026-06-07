@@ -4,6 +4,7 @@ export interface Transaction {
   _id: Types.ObjectId;
   dateKey: string;
   vendorId: Types.ObjectId;
+  productId?: Types.ObjectId | null;
   productName: string;
   productUnit?: string;
   unitPrice: number;
@@ -19,6 +20,7 @@ const transactionSchema = new Schema<Transaction>(
   {
     dateKey: { type: String, required: true },
     vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor', required: true },
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', default: null },
     productName: { type: String, required: true, trim: true },
     productUnit: { type: String, trim: true },
     unitPrice: { type: Number, required: true },
@@ -35,6 +37,7 @@ const transactionSchema = new Schema<Transaction>(
 
 transactionSchema.index({ dateKey: 1 });
 transactionSchema.index({ vendorId: 1, dateKey: 1 });
+transactionSchema.index({ productId: 1 });
 transactionSchema.index({ productName: 1 });
 transactionSchema.index({ deletedAt: 1 });
 
