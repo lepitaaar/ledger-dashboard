@@ -30,6 +30,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const created = await TransactionModel.create({
       dateKey: source.dateKey,
       vendorId: source.vendorId,
+      productId: source.productId,
       productName: source.productName,
       productUnit: source.productUnit,
       unitPrice: source.unitPrice,
@@ -45,6 +46,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       before: source.toObject(),
       after: created.toObject()
     });
+
+    if (created.productId) {
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      await recalculateInventory(created.productId);
+    }
 
     return NextResponse.json({
       data: {

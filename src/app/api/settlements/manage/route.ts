@@ -13,6 +13,7 @@ import { getNowTimeKeyKst } from '@/lib/kst';
 import { type Transaction, TransactionModel } from '@/server/models/transaction';
 import { type Vendor, VendorModel } from '@/server/models/vendor';
 import { writeAuditLog } from '@/server/services/audit';
+import { ensureProductByName } from '@/server/services/products';
 import { calculateAmount } from '@/server/services/transactions';
 
 export const runtime = 'nodejs';
@@ -92,9 +93,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       throw new HttpError(404, '업체를 찾을 수 없습니다.');
     }
 
+    const product = await ensureProductByName(body.productName);
     const created = await TransactionModel.create({
       dateKey: body.dateKey,
       vendorId: vendorObjectId,
+      productId: product._id,
       productName: body.productName,
       productUnit: body.productUnit,
       unitPrice: body.unitPrice,
@@ -109,6 +112,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       entityId: String(created._id),
       after: created.toObject()
     });
+
+    const { recalculateInventory } = await import('@/server/services/inventory');
+    await recalculateInventory(product._id as Types.ObjectId);
 
     return NextResponse.json({ data: mapTransactionRow(created.toObject() as Transaction) }, { status: 201 });
   } catch (error) {
@@ -131,9 +137,12 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }
 
     const before = transaction.toObject();
+    const previousProductId = transaction.productId;
 
     if (body.productName !== undefined) {
+      const product = await ensureProductByName(body.productName);
       transaction.productName = body.productName;
+      transaction.productId = product._id as Types.ObjectId;
     }
 
     if (body.productUnit !== undefined) {
@@ -162,6 +171,21 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
       before,
       after: transaction.toObject()
     });
+
+    const affectedProductIds = new Set<string>();
+    if (previousProductId) {
+      affectedProductIds.add(String(previousProductId));
+    }
+    if (transaction.productId) {
+      affectedProductIds.add(String(transaction.productId));
+    }
+
+    if (affectedProductIds.size > 0) {
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      for (const productId of affectedProductIds) {
+        await recalculateInventory(productId);
+      }
+    }
 
     return NextResponse.json({ data: mapTransactionRow(transaction.toObject() as Transaction) });
   } catch (error) {

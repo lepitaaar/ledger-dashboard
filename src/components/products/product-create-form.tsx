@@ -21,7 +21,7 @@ import { fetchJson } from "@/lib/client";
 
 const createProductSchema = z.object({
   name: z.string().trim().min(1, "품목은 필수입니다.").max(120),
-  unit: z.string().trim().min(1, "규격은 필수입니다.").max(50),
+  unit: z.string().trim().max(50),
 });
 
 type CreateProductValues = z.infer<typeof createProductSchema>;
@@ -166,12 +166,12 @@ export function ProductCreateForm({
             name="unit"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>규격 (Specification) *</FormLabel>
+                <FormLabel>규격 (선택)</FormLabel>
                 <FormControl>
                   <Input placeholder="예: 10kg, 박스, 1단" {...field} />
                 </FormControl>
                 <FormDescription>
-                  상품의 단위 및 규격을 입력하세요.
+                  필요한 경우에만 상품의 단위나 규격을 입력하세요.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
