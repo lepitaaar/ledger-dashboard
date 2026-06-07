@@ -230,7 +230,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
               <th>합계금액 :</th>
               <td class="korean-amount">${escapeHtml(koreanAmountText)}</td>
               <td class="won-label">원정</td>
-              <td class="amount-number">${totalAmountText}</td>
+              <td class="amount-number">₩ ${totalAmountText}</td>
             </tr>
           </tbody>
         </table>
