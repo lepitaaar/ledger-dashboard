@@ -57,6 +57,14 @@ describe("buildSettlementPrintHtml", () => {
     expect(html).toContain("margin: 5mm");
     expect(html).toContain("height: 200mm");
     expect(html).toContain("width: auto");
+    expect(html).toMatch(/\.party-grid\s*\{[^}]*margin-top:\s*0;/);
+    expect(html).toMatch(
+      /\.party-grid tr:first-child > th,\s*\.party-grid tr:first-child > td\s*\{[^}]*border-top:\s*0;/,
+    );
+    expect(html).toMatch(/\.amount-table\s*\{[^}]*margin-top:\s*0;/);
+    expect(html).toMatch(
+      /\.amount-table tr:first-child > th,\s*\.amount-table tr:first-child > td\s*\{[^}]*border-top:\s*0;/,
+    );
     expect(html).not.toContain("width: 148mm");
     expect(html).not.toContain("min-height: 202mm");
     expect(html).toContain("window.print()");
