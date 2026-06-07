@@ -192,13 +192,10 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         <div class="party-grid">
           <table class="recipient-table">
             <tbody>
-              <tr><td class="blank-label"></td><td></td></tr>
               <tr>
                 <th>상호명</th>
                 <td class="vendor-name">${escapeHtml(input.vendorName)}</td>
               </tr>
-              <tr><td></td><td></td></tr>
-              <tr><td></td><td></td></tr>
             </tbody>
           </table>
 
@@ -343,6 +340,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       .date-table th {
         width: 12%;
         height: 7mm;
+        border-right: 0;
       }
 
       .date-table td {
@@ -351,8 +349,14 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         font-weight: 700;
       }
 
+      .date-table td:not(.page-number) {
+        border-left: 0;
+        border-right: 0;
+      }
+
       .date-table .page-number {
         width: 12%;
+        border-left: 0;
         padding-right: 1.5mm;
         text-align: right;
         font-size: 7pt;
@@ -378,12 +382,6 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         font-size: 11pt;
         text-decoration: underline;
         text-underline-offset: 1mm;
-      }
-
-      .recipient-table td,
-      .supplier-table td,
-      .supplier-table th {
-        height: 7.75mm;
       }
 
       .vendor-name {
@@ -444,7 +442,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       .won-label {
         width: 9%;
         text-align: left;
-        font-size: 9pt;
+        font-size: 10pt;
       }
 
       .amount-number {
@@ -463,7 +461,7 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
       }
 
       .items-table tbody td {
-        height: 5.85mm;
+        height: 5.95mm;
         font-size: 12pt;
       }
 
@@ -473,6 +471,12 @@ export function buildSettlementPrintHtml(input: SettlementPrintInput): string {
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
+      }
+
+      .amount-table td:not(.amount-number) {
+        border: 0;
+        border-left: 0;
+        border-right: 0;
       }
 
       .number {
