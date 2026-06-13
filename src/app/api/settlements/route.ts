@@ -1,12 +1,13 @@
 import { Types } from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { connectMongo, withMongoTransaction } from '@/lib/db';
+import { connectMongo } from '@/lib/db';
 import { settlementIssueSchema, settlementListQuerySchema } from '@/lib/dto/settlement';
 import { handleApiError, HttpError } from '@/lib/http';
 import { buildPageMeta, normalizePagination } from '@/lib/pagination';
 import { SettlementModel } from '@/server/models/settlement';
 import { issueSettlement } from '@/server/services/settlements';
+import { runIdempotentMongoTransaction } from '@/server/services/idempotency';
 
 export const runtime = 'nodejs';
 
@@ -90,37 +91,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = settlementIssueSchema.parse(await request.json());
-    const detail = await withMongoTransaction(async (session) => {
-      const issued = await issueSettlement(body, session);
-      const [settlement] = await SettlementModel.aggregate([
-        { $match: { _id: new Types.ObjectId(issued.id) } },
-        {
-          $lookup: {
-            from: 'vendors',
-            localField: 'vendorId',
-            foreignField: '_id',
-            as: 'vendor'
+    const { value: detail, replayed } = await runIdempotentMongoTransaction(
+      request,
+      'settlements:issue',
+      async (session) => {
+        const issued = await issueSettlement(body, session);
+        const [settlement] = await SettlementModel.aggregate([
+          { $match: { _id: new Types.ObjectId(issued.id) } },
+          {
+            $lookup: {
+              from: 'vendors',
+              localField: 'vendorId',
+              foreignField: '_id',
+              as: 'vendor'
+            }
+          },
+          { $unwind: { path: '$vendor', preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              _id: 1,
+              issueDateKey: 1,
+              vendorId: 1,
+              vendorName: { $ifNull: ['$vendor.name', '삭제된 업체'] },
+              rangeStartKey: 1,
+              rangeEndKey: 1,
+              itemsSnapshot: 1,
+              totalAmount: 1,
+              createdAt: 1
+            }
           }
-        },
-        { $unwind: { path: '$vendor', preserveNullAndEmptyArrays: true } },
-        {
-          $project: {
-            _id: 1,
-            issueDateKey: 1,
-            vendorId: 1,
-            vendorName: { $ifNull: ['$vendor.name', '삭제된 업체'] },
-            rangeStartKey: 1,
-            rangeEndKey: 1,
-            itemsSnapshot: 1,
-            totalAmount: 1,
-            createdAt: 1
-          }
-        }
-      ]).session(session);
+        ]).session(session);
 
-      if (!settlement) throw new HttpError(500, '정산서 상세 조회에 실패했습니다.');
-      return settlement;
-    });
+        if (!settlement) throw new HttpError(500, '정산서 상세 조회에 실패했습니다.');
+        return settlement;
+      }
+    );
 
     return NextResponse.json(
       {
@@ -130,7 +135,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           vendorId: String(detail.vendorId)
         }
       },
-      { status: 201 }
+      { status: replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(replayed) } }
     );
   } catch (error) {
     return handleApiError(error);

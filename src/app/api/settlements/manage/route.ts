@@ -13,6 +13,7 @@ import { getNowTimeKeyKst } from '@/lib/kst';
 import { type Transaction, TransactionModel } from '@/server/models/transaction';
 import { type Vendor, VendorModel } from '@/server/models/vendor';
 import { writeAuditLog } from '@/server/services/audit';
+import { runIdempotentMongoTransaction } from '@/server/services/idempotency';
 import { ensureProductByName } from '@/server/services/products';
 import { calculateAmount } from '@/server/services/transactions';
 
@@ -82,41 +83,48 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = settlementLineCreateSchema.parse(await request.json());
-    const created = await withMongoTransaction(async (session) => {
-      const vendorObjectId = new Types.ObjectId(body.vendorId);
-      const vendorExists = await VendorModel.exists({
-        _id: vendorObjectId,
-        deletedAt: null
-      }).session(session);
+    const { value: created, replayed } = await runIdempotentMongoTransaction(
+      request,
+      'settlement-lines:create',
+      async (session) => {
+        const vendorObjectId = new Types.ObjectId(body.vendorId);
+        const vendorExists = await VendorModel.exists({
+          _id: vendorObjectId,
+          deletedAt: null
+        }).session(session);
 
-      if (!vendorExists) throw new HttpError(404, '업체를 찾을 수 없습니다.');
+        if (!vendorExists) throw new HttpError(404, '업체를 찾을 수 없습니다.');
 
-      const product = await ensureProductByName(body.productName, session);
-      const [transaction] = await TransactionModel.create([{
-        dateKey: body.dateKey,
-        vendorId: vendorObjectId,
-        productId: product._id,
-        productName: body.productName,
-        productUnit: body.productUnit,
-        unitPrice: body.unitPrice,
-        qty: body.qty,
-        amount: calculateAmount(body.unitPrice, body.qty),
-        registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
-      }], { session });
+        const product = await ensureProductByName(body.productName, session);
+        const [transaction] = await TransactionModel.create([{
+          dateKey: body.dateKey,
+          vendorId: vendorObjectId,
+          productId: product._id,
+          productName: body.productName,
+          productUnit: body.productUnit,
+          unitPrice: body.unitPrice,
+          qty: body.qty,
+          amount: calculateAmount(body.unitPrice, body.qty),
+          registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
+        }], { session });
 
-      await writeAuditLog({
-        action: 'create',
-        entityType: 'transaction',
-        entityId: String(transaction._id),
-        after: transaction.toObject()
-      }, session);
+        await writeAuditLog({
+          action: 'create',
+          entityType: 'transaction',
+          entityId: String(transaction._id),
+          after: transaction.toObject()
+        }, session);
 
-      const { recalculateInventory } = await import('@/server/services/inventory');
-      await recalculateInventory(product._id as Types.ObjectId, session);
-      return transaction;
-    });
+        const { recalculateInventory } = await import('@/server/services/inventory');
+        await recalculateInventory(product._id as Types.ObjectId, session);
+        return mapTransactionRow(transaction.toObject() as Transaction);
+      }
+    );
 
-    return NextResponse.json({ data: mapTransactionRow(created.toObject() as Transaction) }, { status: 201 });
+    return NextResponse.json(
+      { data: created },
+      { status: replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(replayed) } }
+    );
   } catch (error) {
     return handleApiError(error);
   }

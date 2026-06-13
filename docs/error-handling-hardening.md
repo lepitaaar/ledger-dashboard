@@ -64,3 +64,26 @@
 - `NONGHYUP_REQUEST_TIMEOUT_MS`
 - `SYNC_REQUEST_TIMEOUT_MS`
 - `SYNC_RETRY_INTERVAL_MS`
+
+### 공통 API 오류 계약과 중복 요청 방지
+
+오류 응답은 기존 `message`와 함께 다음 구조를 제공한다.
+
+```json
+{
+  "message": "입력값 검증에 실패했습니다.",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "입력값 검증에 실패했습니다.",
+    "requestId": "uuid",
+    "issues": {}
+  }
+}
+```
+
+- 응답 헤더 `X-Request-Id`와 본문의 `requestId`는 동일하다.
+- Zod 검증, 잘못된 JSON, 잘못된 식별자, MongoDB duplicate key를 각각 `400`, `400`, `400`, `409`로 구분한다.
+- 알 수 없는 서버 오류는 요청 ID를 포함한 JSON 구조 로그로 기록한다.
+- 클라이언트 기본 timeout은 15초이며 `NEXT_PUBLIC_REQUEST_TIMEOUT_MS`로 조정한다.
+- 거래, 입금, 정산서 발행, 계산서 행 생성, 단건 반품, 벌크 처리 POST는 `Idempotency-Key`를 지원한다.
+- 지원되는 POST가 네트워크 단계에서 실패하면 클라이언트는 같은 키로 한 번 재시도한다. 완료된 키는 24시간 동안 같은 응답을 재생한다.

@@ -1,12 +1,13 @@
 import { Types } from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { connectMongo, withMongoTransaction } from '@/lib/db';
+import { connectMongo } from '@/lib/db';
 import { vendorDetailParamSchema, vendorPaymentCreateSchema } from '@/lib/dto/vendor';
 import { handleApiError, HttpError } from '@/lib/http';
 import { PaymentModel } from '@/server/models/payment';
 import { VendorModel } from '@/server/models/vendor';
 import { writeAuditLog } from '@/server/services/audit';
+import { runIdempotentMongoTransaction } from '@/server/services/idempotency';
 
 export const runtime = 'nodejs';
 
@@ -50,44 +51,50 @@ export async function POST(
     const params = vendorDetailParamSchema.parse(context.params);
     const body = vendorPaymentCreateSchema.parse(await request.json());
 
-    const created = await withMongoTransaction(async (session) => {
-      const vendor = await VendorModel.findOne({
-        _id: new Types.ObjectId(params.id),
-        deletedAt: null
-      }).session(session);
+    const { value: created, replayed } = await runIdempotentMongoTransaction(
+      request,
+      `vendors:${params.id}:payments:create`,
+      async (session) => {
+        const vendor = await VendorModel.findOne({
+          _id: new Types.ObjectId(params.id),
+          deletedAt: null
+        }).session(session);
 
-      if (!vendor) {
-        throw new HttpError(404, '업체를 찾을 수 없습니다.');
+        if (!vendor) {
+          throw new HttpError(404, '업체를 찾을 수 없습니다.');
+        }
+
+        const [payment] = await PaymentModel.create([{
+          vendorId: vendor._id,
+          dateKey: body.dateKey,
+          amount: Math.abs(body.amount)
+        }], { session });
+
+        await writeAuditLog({
+          action: 'create',
+          entityType: 'payment',
+          entityId: String(payment._id),
+          after: payment.toObject()
+        }, session);
+
+        return {
+          _id: String(payment._id),
+          vendorId: String(payment.vendorId),
+          dateKey: payment.dateKey,
+          amount: payment.amount,
+          createdAt: payment.createdAt,
+          updatedAt: payment.updatedAt
+        };
       }
-
-      const [payment] = await PaymentModel.create([{
-        vendorId: vendor._id,
-        dateKey: body.dateKey,
-        amount: Math.abs(body.amount)
-      }], { session });
-
-      await writeAuditLog({
-        action: 'create',
-        entityType: 'payment',
-        entityId: String(payment._id),
-        after: payment.toObject()
-      }, session);
-
-      return payment;
-    });
+    );
 
     return NextResponse.json(
       {
         data: {
-          _id: String(created._id),
-          vendorId: String(created.vendorId),
-          dateKey: created.dateKey,
-          amount: created.amount,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt
+          ...created
         }
       },
-      { status: 201 }
+      { status: replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(replayed) } }
     );
   } catch (error) {
     return handleApiError(error);

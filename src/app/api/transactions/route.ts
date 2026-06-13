@@ -9,6 +9,7 @@ import { buildPageMeta } from '@/lib/pagination';
 import { TransactionModel } from '@/server/models/transaction';
 import { VendorModel } from '@/server/models/vendor';
 import { writeAuditLog } from '@/server/services/audit';
+import { runIdempotentMongoTransaction } from '@/server/services/idempotency';
 import { calculateAmount, listTransactions } from '@/server/services/transactions';
 
 export const runtime = 'nodejs';
@@ -68,57 +69,61 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = transactionCreateSchema.parse(await request.json());
-    const created = await withMongoTransaction(async (session) => {
-      const vendorExists = await VendorModel.exists({
-        _id: new Types.ObjectId(body.vendorId),
-        deletedAt: null
-      }).session(session);
-
-      if (!vendorExists) {
-        throw new HttpError(404, '업체를 찾을 수 없습니다.');
-      }
-
-      let finalProductId = body.productId ? new Types.ObjectId(body.productId) : null;
-      if (!finalProductId) {
-        const { ProductModel } = await import('@/server/models/product');
-        const matchedProduct = await ProductModel.findOne({
-          name: body.productName,
-          unit: body.productUnit || undefined,
+    const { value: created, replayed } = await runIdempotentMongoTransaction(
+      request,
+      'transactions:create',
+      async (session) => {
+        const vendorExists = await VendorModel.exists({
+          _id: new Types.ObjectId(body.vendorId),
           deletedAt: null
         }).session(session);
-        if (matchedProduct) {
-          finalProductId = matchedProduct._id;
+
+        if (!vendorExists) {
+          throw new HttpError(404, '업체를 찾을 수 없습니다.');
         }
+
+        let finalProductId = body.productId ? new Types.ObjectId(body.productId) : null;
+        if (!finalProductId) {
+          const { ProductModel } = await import('@/server/models/product');
+          const matchedProduct = await ProductModel.findOne({
+            name: body.productName,
+            unit: body.productUnit || undefined,
+            deletedAt: null
+          }).session(session);
+          if (matchedProduct) finalProductId = matchedProduct._id;
+        }
+
+        const [transaction] = await TransactionModel.create([{
+          dateKey: body.dateKey,
+          vendorId: new Types.ObjectId(body.vendorId),
+          productId: finalProductId,
+          productName: body.productName,
+          productUnit: body.productUnit,
+          unitPrice: body.unitPrice,
+          qty: body.qty,
+          amount: calculateAmount(body.unitPrice, body.qty),
+          registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
+        }], { session });
+
+        if (transaction.productId) {
+          const { recalculateInventory } = await import('@/server/services/inventory');
+          await recalculateInventory(transaction.productId, session);
+        }
+
+        await writeAuditLog({
+          action: 'create',
+          entityType: 'transaction',
+          entityId: String(transaction._id),
+          after: transaction.toObject()
+        }, session);
+        return transaction.toObject();
       }
+    );
 
-      const [transaction] = await TransactionModel.create([{
-        dateKey: body.dateKey,
-        vendorId: new Types.ObjectId(body.vendorId),
-        productId: finalProductId,
-        productName: body.productName,
-        productUnit: body.productUnit,
-        unitPrice: body.unitPrice,
-        qty: body.qty,
-        amount: calculateAmount(body.unitPrice, body.qty),
-        registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
-      }], { session });
-
-      if (transaction.productId) {
-        const { recalculateInventory } = await import('@/server/services/inventory');
-        await recalculateInventory(transaction.productId, session);
-      }
-
-      await writeAuditLog({
-        action: 'create',
-        entityType: 'transaction',
-        entityId: String(transaction._id),
-        after: transaction.toObject()
-      }, session);
-
-      return transaction;
-    });
-
-    return NextResponse.json({ data: created.toObject() }, { status: 201 });
+    return NextResponse.json(
+      { data: created },
+      { status: replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(replayed) } }
+    );
   } catch (error) {
     return handleApiError(error);
   }
