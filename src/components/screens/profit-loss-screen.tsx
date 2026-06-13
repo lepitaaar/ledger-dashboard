@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { DATE_KEY_FORMAT, getTodayDateKey } from "@/lib/kst";
 import { formatWon } from "@/lib/utils";
+import { ErrorState } from "@/components/ui/state-panel";
 
 type ProfitLossData = {
   periodRevenue: number;
@@ -52,6 +53,7 @@ export function ProfitLossScreen(): JSX.Element {
 
   const [data, setData] = useState<ProfitLossData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [startKey, setStartKey] = useState(oneMonthAgo);
@@ -61,6 +63,7 @@ export function ProfitLossScreen(): JSX.Element {
 
   const loadProfitLoss = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const query = buildQueryString({
         startKey,
@@ -69,7 +72,9 @@ export function ProfitLossScreen(): JSX.Element {
       const res = await fetchJson<ProfitLossResponse>(`/api/profit-loss?${query}`);
       setData(res.data);
     } catch (err) {
-      toast.error((err as Error).message || "손익 데이터를 가져오지 못했습니다.");
+      const message = (err as Error).message || "손익 데이터를 가져오지 못했습니다.";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -141,6 +146,14 @@ export function ProfitLossScreen(): JSX.Element {
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-28 w-full" />
         </div>
+      ) : error ? (
+        <Card>
+          <ErrorState
+            title="손익 데이터를 불러오지 못했습니다."
+            description={error}
+            onRetry={() => void loadProfitLoss()}
+          />
+        </Card>
       ) : data ? (
         <div className="space-y-6">
           {/* Main Financial Highlights */}

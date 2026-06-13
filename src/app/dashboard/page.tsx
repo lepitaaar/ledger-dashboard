@@ -36,13 +36,14 @@ import {
 export const dynamic = "force-dynamic";
 
 type DashboardData = {
-  todaySales: number;
-  monthSales: number;
-  outstandingAmount: number;
-  lowStockCount: number;
-  unmatchedCount: number;
-  activeVendorCount: number;
-  recentTransactions: TransactionListItem[];
+  todaySales: number | null;
+  monthSales: number | null;
+  outstandingAmount: number | null;
+  lowStockCount: number | null;
+  unmatchedCount: number | null;
+  activeVendorCount: number | null;
+  recentTransactions: TransactionListItem[] | null;
+  errors: string[];
 };
 
 async function getDashboardData(): Promise<DashboardData> {
@@ -60,7 +61,7 @@ async function getDashboardData(): Promise<DashboardData> {
     activeVendorCount,
     paymentAggregate,
     salesAggregate,
-  ] = await Promise.all([
+  ] = await Promise.allSettled([
     listTransactions({ startKey: today, endKey: today }, { page: 1, limit: 1 }),
     listTransactions(monthRange, { page: 1, limit: 1 }),
     listTransactions({}, { page: 1, limit: 6 }),
@@ -76,17 +77,42 @@ async function getDashboardData(): Promise<DashboardData> {
     ]),
   ]);
 
-  const totalPayments = Number(paymentAggregate[0]?.total ?? 0);
-  const totalSales = Number(salesAggregate[0]?.total ?? 0);
+  const errors: string[] = [];
+  const failed = (result: PromiseSettledResult<unknown>, label: string): boolean => {
+    if (result.status === "rejected") {
+      errors.push(label);
+      return true;
+    }
+    return false;
+  };
+
+  failed(todayTransactions, "오늘 매출");
+  failed(monthTransactions, "이번 달 매출");
+  failed(recentTransactions, "최근 거래");
+  failed(inventory, "재고");
+  failed(unmatchedCount, "미매칭");
+  failed(activeVendorCount, "활성 거래처");
+  failed(paymentAggregate, "입금 합계");
+  failed(salesAggregate, "매출 합계");
+
+  const totalPayments = paymentAggregate.status === "fulfilled"
+    ? Number(paymentAggregate.value[0]?.total ?? 0)
+    : null;
+  const totalSales = salesAggregate.status === "fulfilled"
+    ? Number(salesAggregate.value[0]?.total ?? 0)
+    : null;
 
   return {
-    todaySales: todayTransactions.periodTotalAmount,
-    monthSales: monthTransactions.periodTotalAmount,
-    outstandingAmount: totalSales - totalPayments,
-    lowStockCount: inventory.filter((item) => item.isInsufficient).length,
-    unmatchedCount,
-    activeVendorCount,
-    recentTransactions: recentTransactions.items,
+    todaySales: todayTransactions.status === "fulfilled" ? todayTransactions.value.periodTotalAmount : null,
+    monthSales: monthTransactions.status === "fulfilled" ? monthTransactions.value.periodTotalAmount : null,
+    outstandingAmount: totalSales !== null && totalPayments !== null ? totalSales - totalPayments : null,
+    lowStockCount: inventory.status === "fulfilled"
+      ? inventory.value.filter((item) => item.isInsufficient).length
+      : null,
+    unmatchedCount: unmatchedCount.status === "fulfilled" ? unmatchedCount.value : null,
+    activeVendorCount: activeVendorCount.status === "fulfilled" ? activeVendorCount.value : null,
+    recentTransactions: recentTransactions.status === "fulfilled" ? recentTransactions.value.items : null,
+    errors,
   };
 }
 
@@ -147,38 +173,51 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         }
       />
 
-      {error ? (
+      {error || data?.errors.length ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          실시간 데이터를 불러오지 못했습니다. 서버 연결을 확인해 주세요.
-          <span className="ml-2 text-xs text-amber-700">{error}</span>
+          일부 실시간 데이터를 불러오지 못했습니다.
+          <span className="ml-2 text-xs text-amber-700">
+            {error ?? data?.errors.join(", ")}
+          </span>
         </div>
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           label="오늘 매출"
-          value={<MoneyText value={data?.todaySales ?? 0} />}
+          value={data?.todaySales === null || data?.todaySales === undefined
+            ? "조회 실패"
+            : <MoneyText value={data.todaySales} />}
           description={`${getTodayDateKey()} 거래 기준`}
           icon={CircleDollarSign}
         />
         <MetricCard
           label="이번 달 매출"
-          value={<MoneyText value={data?.monthSales ?? 0} />}
+          value={data?.monthSales === null || data?.monthSales === undefined
+            ? "조회 실패"
+            : <MoneyText value={data.monthSales} />}
           description="이번 달 누적 매출"
           icon={TrendingUp}
           tone="success"
         />
         <MetricCard
           label="총 미수금"
-          value={<MoneyText value={data?.outstandingAmount ?? 0} />}
+          value={data?.outstandingAmount === null || data?.outstandingAmount === undefined
+            ? "조회 실패"
+            : <MoneyText value={data.outstandingAmount} />}
           description="누적 매출에서 입금액을 제외한 금액"
           icon={FileText}
-          tone={(data?.outstandingAmount ?? 0) > 0 ? "warning" : "success"}
+          tone={data?.outstandingAmount === null || data?.outstandingAmount === undefined
+            ? "warning"
+            : data.outstandingAmount > 0 ? "warning" : "success"}
         />
         <MetricCard
           label="처리 필요"
-          value={`${(data?.lowStockCount ?? 0) + (data?.unmatchedCount ?? 0)}건`}
-          description={`재고 부족 ${data?.lowStockCount ?? 0} · 미매칭 ${data?.unmatchedCount ?? 0}`}
+          value={data?.lowStockCount === null || data?.lowStockCount === undefined ||
+            data?.unmatchedCount === null || data?.unmatchedCount === undefined
+            ? "조회 실패"
+            : `${data.lowStockCount + data.unmatchedCount}건`}
+          description={`재고 부족 ${data?.lowStockCount ?? "-"} · 미매칭 ${data?.unmatchedCount ?? "-"}`}
           icon={AlertTriangle}
           tone={(data?.lowStockCount ?? 0) + (data?.unmatchedCount ?? 0) > 0 ? "danger" : "success"}
         />
@@ -208,7 +247,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                 </tr>
               </thead>
               <tbody>
-                {data?.recentTransactions.length ? (
+                {!data || data.recentTransactions === null ? (
+                  <tr>
+                    <td colSpan={4} className="px-5 py-12 text-center text-sm text-red-600">
+                      최근 거래를 불러오지 못했습니다.
+                    </td>
+                  </tr>
+                ) : data.recentTransactions.length ? (
                   data.recentTransactions.map((item) => (
                     <tr key={item._id} className="border-t border-slate-100">
                       <td className="whitespace-nowrap px-5 py-3 text-slate-500">
@@ -242,7 +287,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
           </div>
 
           <div className="divide-y divide-slate-100 md:hidden">
-            {data?.recentTransactions.length ? (
+            {!data || data.recentTransactions === null ? (
+              <p className="px-5 py-12 text-center text-sm text-red-600">
+                최근 거래를 불러오지 못했습니다.
+              </p>
+            ) : data.recentTransactions.length ? (
               data.recentTransactions.map((item) => (
                 <div key={item._id} className="space-y-2 p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -306,21 +355,27 @@ export default async function DashboardPage(): Promise<JSX.Element> {
               <div>
                 <Users className="h-4 w-4 text-blue-300" />
                 <p className="mt-2 text-xl font-bold tabular-nums">
-                  {formatCurrency(data?.activeVendorCount ?? 0)}
+                  {data?.activeVendorCount === null || data?.activeVendorCount === undefined
+                    ? "-"
+                    : formatCurrency(data.activeVendorCount)}
                 </p>
                 <p className="text-sm text-slate-300">활성 거래처</p>
               </div>
               <div>
                 <Boxes className="h-4 w-4 text-amber-300" />
                 <p className="mt-2 text-xl font-bold tabular-nums">
-                  {formatCurrency(data?.lowStockCount ?? 0)}
+                  {data?.lowStockCount === null || data?.lowStockCount === undefined
+                    ? "-"
+                    : formatCurrency(data.lowStockCount)}
                 </p>
                 <p className="text-sm text-slate-300">재고 부족</p>
               </div>
               <div>
                 <RefreshCcw className="h-4 w-4 text-emerald-300" />
                 <p className="mt-2 text-xl font-bold tabular-nums">
-                  {formatCurrency(data?.unmatchedCount ?? 0)}
+                  {data?.unmatchedCount === null || data?.unmatchedCount === undefined
+                    ? "-"
+                    : formatCurrency(data.unmatchedCount)}
                 </p>
                 <p className="text-sm text-slate-300">미매칭</p>
               </div>

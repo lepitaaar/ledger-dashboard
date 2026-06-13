@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Combobox } from "@/components/ui/combobox";
 import { fetchJson } from "@/lib/client";
+import { ErrorState } from "@/components/ui/state-panel";
 
 type MappingRow = {
   _id: string;
@@ -46,6 +47,9 @@ export function ProductMappingsScreen(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [metaLoading, setMetaLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [mappingsError, setMappingsError] = useState<string | null>(null);
 
   // Pagination for Mappings
   const [page, setPage] = useState(1);
@@ -77,25 +81,36 @@ export function ProductMappingsScreen(): JSX.Element {
 
   const loadMeta = useCallback(async () => {
     setMetaLoading(true);
-    try {
-      // 1. 전체 상품 조회
-      const prodRes = await fetchJson<{ data: ProductOption[] }>("/api/products?page=1&limit=500");
-      setProducts(prodRes.data);
+    setProductsError(null);
+    setSuggestionsError(null);
 
-      // 2. 전체 기간의 활성 미매핑 품목 코드를 집계합니다.
-      const mappingRes = await fetchJson<{ suggestions: UnmappedSuggestion[] }>(
+    const [productsResult, suggestionsResult] = await Promise.allSettled([
+      fetchJson<{ data: ProductOption[] }>("/api/products?page=1&limit=500"),
+      fetchJson<{ suggestions: UnmappedSuggestion[] }>(
         "/api/auctions/mappings?page=1&limit=1"
-      );
-      setUnmappedSuggestions(mappingRes.suggestions);
-    } catch {
-      toast.error("메타 정보 조회 실패");
-    } finally {
-      setMetaLoading(false);
+      )
+    ]);
+
+    if (productsResult.status === "fulfilled") {
+      setProducts(productsResult.value.data);
+    } else {
+      setProductsError(productsResult.reason instanceof Error ? productsResult.reason.message : "상품 조회 실패");
     }
+
+    if (suggestionsResult.status === "fulfilled") {
+      setUnmappedSuggestions(suggestionsResult.value.suggestions);
+    } else {
+      setSuggestionsError(
+        suggestionsResult.reason instanceof Error ? suggestionsResult.reason.message : "미매칭 품목 조회 실패"
+      );
+    }
+
+    setMetaLoading(false);
   }, []);
 
   const loadMappings = useCallback(async () => {
     setLoading(true);
+    setMappingsError(null);
     try {
       const res = await fetchJson<{ data: MappingRow[]; meta: { totalPages: number } }>(
         `/api/auctions/mappings?page=${page}&limit=10`
@@ -103,7 +118,9 @@ export function ProductMappingsScreen(): JSX.Element {
       setMappings(res.data);
       setTotalPages(res.meta.totalPages);
     } catch (err) {
-      toast.error((err as Error).message || "매핑 조회 실패");
+      const message = (err as Error).message || "매핑 조회 실패";
+      setMappingsError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -256,11 +273,25 @@ export function ProductMappingsScreen(): JSX.Element {
               </span>
             </CardHeader>
             <CardContent className="p-5">
+              {productsError ? (
+                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <span>상품 목록 조회 실패: {productsError}</span>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void loadMeta()}>
+                    다시 시도
+                  </Button>
+                </div>
+              ) : null}
               {metaLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-16 w-full" />
                   <Skeleton className="h-16 w-full" />
                 </div>
+              ) : suggestionsError ? (
+                <ErrorState
+                  title="미매칭 품목을 불러오지 못했습니다."
+                  description={suggestionsError}
+                  onRetry={() => void loadMeta()}
+                />
               ) : unmappedSuggestions.length > 0 ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   {unmappedSuggestions.map((sug) => (
@@ -339,6 +370,12 @@ export function ProductMappingsScreen(): JSX.Element {
                     <Skeleton className="h-3 w-40" />
                   </div>
                 ))
+              ) : mappingsError ? (
+                <ErrorState
+                  title="매핑 목록을 불러오지 못했습니다."
+                  description={mappingsError}
+                  onRetry={() => void loadMappings()}
+                />
               ) : mappings.length > 0 ? (
                 mappings.map((m) => (
                   <div key={m._id} className="p-4 hover:bg-slate-50 transition-colors text-xs flex justify-between items-center">

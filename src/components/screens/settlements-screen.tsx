@@ -1,7 +1,7 @@
 "use client";
 
 import { Search, Store } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/state-panel";
 import { fetchJson } from "@/lib/client";
 import { getTodayDateKey } from "@/lib/kst";
 
@@ -28,24 +29,28 @@ export function SettlementsScreen(): JSX.Element {
   const [vendors, setVendors] = useState<VendorOption[]>([]);
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadVendors = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetchJson<VendorListResponse>(
+        "/api/vendors?page=1&limit=500",
+      );
+      setVendors(response.data);
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : "업체 목록 조회 실패";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const loadVendors = async (): Promise<void> => {
-      setLoading(true);
-      try {
-        const response = await fetchJson<VendorListResponse>(
-          "/api/vendors?page=1&limit=500",
-        );
-        setVendors(response.data);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "업체 목록 조회 실패");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void loadVendors();
-  }, []);
+  }, [loadVendors]);
 
   const filteredVendors = useMemo(() => {
     const query = keyword.trim().toLowerCase();
@@ -98,7 +103,13 @@ export function SettlementsScreen(): JSX.Element {
               발행 대상 업체 선택
             </h2>
 
-            {loading ? (
+            {error ? (
+              <ErrorState
+                title="업체 목록을 불러오지 못했습니다."
+                description={error}
+                onRetry={() => void loadVendors()}
+              />
+            ) : loading ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, index) => (
                   <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-4">

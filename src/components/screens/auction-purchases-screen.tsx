@@ -15,6 +15,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { buildQueryString, fetchJson } from "@/lib/client";
 import { DATE_KEY_FORMAT, getTodayDateKey } from "@/lib/kst";
 import { formatCurrency } from "@/lib/utils";
+import { ErrorState } from "@/components/ui/state-panel";
 
 type PurchaseRow = {
   _id: string;
@@ -90,6 +91,7 @@ export function AuctionPurchasesScreen(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   // Filters
   const [startKey, setStartKey] = useState(firstDayOfMonth);
@@ -140,6 +142,7 @@ export function AuctionPurchasesScreen(): JSX.Element {
 
   const loadPurchases = useCallback(async () => {
     setLoading(true);
+    setPurchaseError(null);
     try {
       const query = buildQueryString({
         page,
@@ -159,7 +162,9 @@ export function AuctionPurchasesScreen(): JSX.Element {
       setPeriodTotalQuantity(res.meta.periodTotalQuantity);
       setAmountMismatchCount(res.meta.amountMismatchCount);
     } catch (err) {
-      toast.error((err as Error).message || "매입 내역을 불러오지 못했습니다.");
+      const message = (err as Error).message || "매입 내역을 불러오지 못했습니다.";
+      setPurchaseError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -233,7 +238,9 @@ export function AuctionPurchasesScreen(): JSX.Element {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-black text-slate-800">{formatCurrency(totalCount)} 건</div>
+            <div className="text-3xl font-black text-slate-800">
+              {purchaseError ? "-" : `${formatCurrency(totalCount)} 건`}
+            </div>
             <p className="text-xs text-slate-400 mt-1">지정 기간 내 유효 낙찰 내역</p>
           </CardContent>
         </Card>
@@ -246,7 +253,9 @@ export function AuctionPurchasesScreen(): JSX.Element {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-black text-emerald-700">{formatCurrency(periodTotalAmount)} 원</div>
+            <div className="text-3xl font-black text-emerald-700">
+              {purchaseError ? "-" : `${formatCurrency(periodTotalAmount)} 원`}
+            </div>
             <p className="text-xs text-slate-400 mt-1">낙찰가와 수량의 실매입 합산</p>
           </CardContent>
         </Card>
@@ -260,7 +269,9 @@ export function AuctionPurchasesScreen(): JSX.Element {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-black text-indigo-800">
-              {periodTotalQuantity > 0 ? formatCurrency(Math.round(periodTotalAmount / periodTotalQuantity)) : 0} 원
+              {purchaseError
+                ? "-"
+                : `${periodTotalQuantity > 0 ? formatCurrency(Math.round(periodTotalAmount / periodTotalQuantity)) : 0} 원`}
             </div>
             <p className={`mt-1 text-xs ${amountMismatchCount > 0 ? "font-semibold text-amber-600" : "text-slate-400"}`}>
               {amountMismatchCount > 0
@@ -338,6 +349,13 @@ export function AuctionPurchasesScreen(): JSX.Element {
               </div>
 
               {/* Data Table */}
+              {purchaseError ? (
+                <ErrorState
+                  title="매입 내역을 불러오지 못했습니다."
+                  description={purchaseError}
+                  onRetry={() => void loadPurchases()}
+                />
+              ) : (
               <div className="overflow-x-auto rounded-lg border border-slate-100">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-50 text-slate-700 uppercase font-semibold">
@@ -422,10 +440,11 @@ export function AuctionPurchasesScreen(): JSX.Element {
                   </tbody>
                 </table>
               </div>
+              )}
 
-              <div className="flex justify-end pt-2">
+              {!purchaseError ? <div className="flex justify-end pt-2">
                 <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-              </div>
+              </div> : null}
             </CardContent>
           </Card>
         </div>

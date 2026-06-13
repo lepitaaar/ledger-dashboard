@@ -32,6 +32,7 @@ export function ErrorState({
   title,
   description,
   onRetry,
+  action,
 }: StatePanelProps & { onRetry?: () => void }): JSX.Element {
   return (
     <div className="flex min-h-48 flex-col items-center justify-center px-6 py-10 text-center">
@@ -42,7 +43,8 @@ export function ErrorState({
       {description ? (
         <p className="mt-1 max-w-md text-sm leading-6 text-slate-600">{description}</p>
       ) : null}
-      {onRetry ? (
+      {action ? <div className="mt-4">{action}</div> : null}
+      {!action && onRetry ? (
         <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
           다시 시도
         </Button>

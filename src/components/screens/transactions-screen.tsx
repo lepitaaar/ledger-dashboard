@@ -144,6 +144,7 @@ export function TransactionsScreen({
     initialVendors !== undefined && initialProducts !== undefined,
   );
   const skipInitialTransactionsLoadRef = useRef(Boolean(initialMeta));
+  const transactionsAbortRef = useRef<AbortController | null>(null);
 
   const vendorOptions = useMemo(
     () => [
@@ -184,6 +185,9 @@ export function TransactionsScreen({
   }, []);
 
   const loadTransactions = useCallback(async () => {
+    transactionsAbortRef.current?.abort();
+    const controller = new AbortController();
+    transactionsAbortRef.current = controller;
     setLoading(true);
     setError(null);
 
@@ -199,18 +203,24 @@ export function TransactionsScreen({
       });
       const response = await fetchJson<TransactionListResponse>(
         `/api/transactions?${query}`,
+        { signal: controller.signal },
       );
 
+      if (controller.signal.aborted) return;
       setRows(response.data);
       setTotal(response.meta.total);
       setTotalPages(response.meta.totalPages);
       setPeriodTotalAmount(response.meta.periodTotalAmount);
     } catch (loadError) {
+      if (controller.signal.aborted) return;
       setError(
         loadError instanceof Error ? loadError.message : "거래 조회 실패",
       );
     } finally {
-      setLoading(false);
+      if (transactionsAbortRef.current === controller) {
+        transactionsAbortRef.current = null;
+        setLoading(false);
+      }
     }
   }, [
     effectiveRange.endKey,
@@ -235,6 +245,7 @@ export function TransactionsScreen({
       return;
     }
     void loadTransactions();
+    return () => transactionsAbortRef.current?.abort();
   }, [loadTransactions]);
 
   const handlePreset = (nextPreset: DatePreset): void => {
