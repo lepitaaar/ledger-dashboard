@@ -10,6 +10,8 @@ import {
 } from './nonghyup-crypto';
 
 const BXM_URL = 'https://newgp.nonghyup.com/naieSvc/xframe';
+const REQUEST_TIMEOUT_MS = Number(process.env.NONGHYUP_REQUEST_TIMEOUT_MS || 15_000);
+const MAX_REQUEST_ATTEMPTS = 2;
 
 // 운영 환경 정보 고정 정의
 const PROD_CONFIG = {
@@ -29,6 +31,36 @@ interface NonghyupSession {
 }
 
 let activeSession: NonghyupSession | null = null;
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      });
+
+      if (!isRetryableStatus(response.status) || attempt === MAX_REQUEST_ATTEMPTS) {
+        return response;
+      }
+
+      await response.body?.cancel();
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_REQUEST_ATTEMPTS) throw error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('농협 API 요청에 실패했습니다.');
+}
 
 // KST 날짜/시간 구하기 헬퍼 함수
 function getTodayKst(): string {
@@ -82,7 +114,7 @@ async function runLogin(): Promise<NonghyupSession> {
     body: {}
   };
 
-  const initResponse = await fetch(BXM_URL, {
+  const initResponse = await fetchWithRetry(BXM_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(initPayload)
@@ -127,7 +159,7 @@ async function runLogin(): Promise<NonghyupSession> {
 
   const rsaEncryptedBody = apiEncrypt(JSON.stringify(rsaPayload), KEYVal, IVVal);
 
-  const rsaResponse = await fetch(BXM_URL, {
+  const rsaResponse = await fetchWithRetry(BXM_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -175,7 +207,7 @@ async function runLogin(): Promise<NonghyupSession> {
 
   const loginEncryptedBody = apiEncrypt(JSON.stringify(loginPayload), KEYVal, IVVal);
 
-  const loginResponse = await fetch(BXM_URL, {
+  const loginResponse = await fetchWithRetry(BXM_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -272,7 +304,7 @@ async function executeAuctionQuery(session: NonghyupSession, ymd: string, pageNo
 
   const encryptedBody = apiEncrypt(JSON.stringify(auctionPayload), session.KEYVal, session.IVVal);
 
-  const response = await fetch(BXM_URL, {
+  const response = await fetchWithRetry(BXM_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

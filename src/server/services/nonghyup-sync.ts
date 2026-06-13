@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import { fetchNonghyupAuctions, AuctionPurchaseItem } from './nonghyup-client';
 import { AuctionPurchaseModel, AuctionPurchase } from '@/server/models/auction-purchase';
 import { AuctionSyncRunModel } from '@/server/models/auction-sync-run';
@@ -19,6 +20,9 @@ export interface AuctionSyncResult {
   executionTimeMs: number;
 }
 
+const LOCK_STALE_MS = 30 * 60 * 1000;
+const LOCK_HEARTBEAT_MS = 5 * 60 * 1000;
+
 function purchaseKey(purchase: Partial<AuctionPurchase>): string {
   return [
     purchase.dateKey,
@@ -34,12 +38,13 @@ function purchaseKey(purchase: Partial<AuctionPurchase>): string {
  * 동기화 프로세스에 대한 분산 DB 락을 획득합니다.
  * 락은 최대 30분 동안 유효하며, 오래된 락만 원자적으로 대체합니다.
  */
-async function acquireLock(): Promise<void> {
-  const staleTime = new Date(Date.now() - 30 * 60 * 1000);
+async function acquireLock(): Promise<string> {
+  const staleTime = new Date(Date.now() - LOCK_STALE_MS);
+  const ownerId = randomUUID();
 
   await AuctionSyncLockModel.updateOne(
     { key: 'sync_lock' },
-    { $setOnInsert: { isLocked: false, lockedAt: null } },
+    { $setOnInsert: { isLocked: false, lockedAt: null, ownerId: null } },
     { upsert: true }
   );
 
@@ -52,23 +57,44 @@ async function acquireLock(): Promise<void> {
         { lockedAt: { $lt: staleTime } }
       ]
     },
-    { $set: { isLocked: true, lockedAt: new Date() } },
+    { $set: { isLocked: true, lockedAt: new Date(), ownerId } },
     { new: true }
   );
 
   if (!lock) {
     throw new Error('다른 동기화 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.');
   }
+
+  return ownerId;
 }
 
 /**
  * 동기화 프로세스 락을 해제합니다.
  */
-async function releaseLock(): Promise<void> {
+async function releaseLock(ownerId: string): Promise<void> {
   await AuctionSyncLockModel.updateOne(
-    { key: 'sync_lock' },
-    { isLocked: false, lockedAt: null }
+    { key: 'sync_lock', ownerId },
+    { isLocked: false, lockedAt: null, ownerId: null }
   );
+}
+
+async function refreshLock(ownerId: string): Promise<void> {
+  const result = await AuctionSyncLockModel.updateOne(
+    { key: 'sync_lock', isLocked: true, ownerId },
+    { $set: { lockedAt: new Date() } }
+  );
+
+  if (result.matchedCount !== 1) {
+    throw new Error('동기화 락 소유권을 잃었습니다.');
+  }
+}
+
+function startLockHeartbeat(ownerId: string): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    void refreshLock(ownerId).catch((error) => {
+      console.error('[SyncService] 동기화 락 heartbeat 실패:', error);
+    });
+  }, LOCK_HEARTBEAT_MS);
 }
 
 /**
@@ -247,24 +273,25 @@ export async function syncAuctionPurchases(startKey: string, endKey: string): Pr
   }
 
   const startTime = Date.now();
-  await acquireLock();
-
-  // 실행 로그 인스턴스 생성
-  const runLog = await AuctionSyncRunModel.create({
-    startDateKey: startKey,
-    endDateKey: endKey,
-    status: 'running'
-  });
-
-  const affectedProductIds = new Set<string>();
-  let totalQueryCount = 0;
-  let totalInsertedCount = 0;
-  let totalUpdatedCount = 0;
-  let totalCanceledCount = 0;
-  let totalFailedCount = 0;
-  let firstError: string | null = null;
+  const lockOwnerId = await acquireLock();
+  const heartbeat = startLockHeartbeat(lockOwnerId);
+  let runLog: InstanceType<typeof AuctionSyncRunModel> | null = null;
 
   try {
+    runLog = await AuctionSyncRunModel.create({
+      startDateKey: startKey,
+      endDateKey: endKey,
+      status: 'running'
+    });
+
+    const affectedProductIds = new Set<string>();
+    let totalQueryCount = 0;
+    let totalInsertedCount = 0;
+    let totalUpdatedCount = 0;
+    let totalCanceledCount = 0;
+    let totalFailedCount = 0;
+    let firstError: string | null = null;
+
     // 날짜별 루프 생성
     const daysCount = Math.floor(endDt.diff(startDt, 'days').days) + 1;
 
@@ -282,6 +309,8 @@ export async function syncAuctionPurchases(startKey: string, endKey: string): Pr
     });
 
     for (const [monthKey, monthDates] of Object.entries(groups)) {
+      await refreshLock(lockOwnerId);
+
       // 1. 해당 월에 속하는 날짜들의 API 데이터 모두 수집
       const monthApiPurchases: Partial<AuctionPurchase>[] = [];
       let monthValid = true;
@@ -431,12 +460,23 @@ export async function syncAuctionPurchases(startKey: string, endKey: string): Pr
     };
   } catch (error) {
     console.error('[SyncService] 동기화 중 오류 발생:', error);
-    runLog.status = 'failed';
-    runLog.error = (error as Error).message;
-    runLog.executionTimeMs = Date.now() - startTime;
-    await runLog.save();
+    if (runLog) {
+      runLog.status = 'failed';
+      runLog.error = (error as Error).message;
+      runLog.executionTimeMs = Date.now() - startTime;
+      try {
+        await runLog.save();
+      } catch (logError) {
+        console.error('[SyncService] 실패 실행 로그 저장 오류:', logError);
+      }
+    }
     throw error;
   } finally {
-    await releaseLock();
+    clearInterval(heartbeat);
+    try {
+      await releaseLock(lockOwnerId);
+    } catch (releaseError) {
+      console.error('[SyncService] 동기화 락 해제 실패:', releaseError);
+    }
   }
 }
