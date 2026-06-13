@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { connectMongo } from '@/lib/db';
+import { connectMongo, withMongoTransaction } from '@/lib/db';
 import { vendorDetailParamSchema, vendorPaymentCreateSchema } from '@/lib/dto/vendor';
 import { handleApiError, HttpError } from '@/lib/http';
 import { PaymentModel } from '@/server/models/payment';
@@ -50,26 +50,30 @@ export async function POST(
     const params = vendorDetailParamSchema.parse(context.params);
     const body = vendorPaymentCreateSchema.parse(await request.json());
 
-    const vendor = await VendorModel.findOne({
-      _id: new Types.ObjectId(params.id),
-      deletedAt: null
-    });
+    const created = await withMongoTransaction(async (session) => {
+      const vendor = await VendorModel.findOne({
+        _id: new Types.ObjectId(params.id),
+        deletedAt: null
+      }).session(session);
 
-    if (!vendor) {
-      throw new HttpError(404, '업체를 찾을 수 없습니다.');
-    }
+      if (!vendor) {
+        throw new HttpError(404, '업체를 찾을 수 없습니다.');
+      }
 
-    const created = await PaymentModel.create({
-      vendorId: vendor._id,
-      dateKey: body.dateKey,
-      amount: Math.abs(body.amount)
-    });
+      const [payment] = await PaymentModel.create([{
+        vendorId: vendor._id,
+        dateKey: body.dateKey,
+        amount: Math.abs(body.amount)
+      }], { session });
 
-    await writeAuditLog({
-      action: 'create',
-      entityType: 'payment',
-      entityId: String(created._id),
-      after: created.toObject()
+      await writeAuditLog({
+        action: 'create',
+        entityType: 'payment',
+        entityId: String(payment._id),
+        after: payment.toObject()
+      }, session);
+
+      return payment;
     });
 
     return NextResponse.json(

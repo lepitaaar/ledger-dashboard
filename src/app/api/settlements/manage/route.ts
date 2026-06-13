@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { connectMongo } from '@/lib/db';
+import { connectMongo, withMongoTransaction } from '@/lib/db';
 import {
   settlementLineCreateSchema,
   settlementLineDeleteSchema,
@@ -82,39 +82,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = settlementLineCreateSchema.parse(await request.json());
-    const vendorObjectId = new Types.ObjectId(body.vendorId);
+    const created = await withMongoTransaction(async (session) => {
+      const vendorObjectId = new Types.ObjectId(body.vendorId);
+      const vendorExists = await VendorModel.exists({
+        _id: vendorObjectId,
+        deletedAt: null
+      }).session(session);
 
-    const vendorExists = await VendorModel.exists({
-      _id: vendorObjectId,
-      deletedAt: null
+      if (!vendorExists) throw new HttpError(404, '업체를 찾을 수 없습니다.');
+
+      const product = await ensureProductByName(body.productName, session);
+      const [transaction] = await TransactionModel.create([{
+        dateKey: body.dateKey,
+        vendorId: vendorObjectId,
+        productId: product._id,
+        productName: body.productName,
+        productUnit: body.productUnit,
+        unitPrice: body.unitPrice,
+        qty: body.qty,
+        amount: calculateAmount(body.unitPrice, body.qty),
+        registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
+      }], { session });
+
+      await writeAuditLog({
+        action: 'create',
+        entityType: 'transaction',
+        entityId: String(transaction._id),
+        after: transaction.toObject()
+      }, session);
+
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      await recalculateInventory(product._id as Types.ObjectId, session);
+      return transaction;
     });
-
-    if (!vendorExists) {
-      throw new HttpError(404, '업체를 찾을 수 없습니다.');
-    }
-
-    const product = await ensureProductByName(body.productName);
-    const created = await TransactionModel.create({
-      dateKey: body.dateKey,
-      vendorId: vendorObjectId,
-      productId: product._id,
-      productName: body.productName,
-      productUnit: body.productUnit,
-      unitPrice: body.unitPrice,
-      qty: body.qty,
-      amount: calculateAmount(body.unitPrice, body.qty),
-      registeredTimeKST: body.registeredTimeKST ?? getNowTimeKeyKst()
-    });
-
-    await writeAuditLog({
-      action: 'create',
-      entityType: 'transaction',
-      entityId: String(created._id),
-      after: created.toObject()
-    });
-
-    const { recalculateInventory } = await import('@/server/services/inventory');
-    await recalculateInventory(product._id as Types.ObjectId);
 
     return NextResponse.json({ data: mapTransactionRow(created.toObject() as Transaction) }, { status: 201 });
   } catch (error) {
@@ -127,65 +127,46 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = settlementLineUpdateSchema.parse(await request.json());
-    const transaction = await TransactionModel.findOne({
-      _id: new Types.ObjectId(body.id),
-      deletedAt: null
-    });
+    const transaction = await withMongoTransaction(async (session) => {
+      const found = await TransactionModel.findOne({
+        _id: new Types.ObjectId(body.id),
+        deletedAt: null
+      }).session(session);
 
-    if (!transaction) {
-      throw new HttpError(404, '거래 행을 찾을 수 없습니다.');
-    }
+      if (!found) throw new HttpError(404, '거래 행을 찾을 수 없습니다.');
 
-    const before = transaction.toObject();
-    const previousProductId = transaction.productId;
+      const before = found.toObject();
+      const previousProductId = found.productId;
 
-    if (body.productName !== undefined) {
-      const product = await ensureProductByName(body.productName);
-      transaction.productName = body.productName;
-      transaction.productId = product._id as Types.ObjectId;
-    }
-
-    if (body.productUnit !== undefined) {
-      transaction.productUnit = body.productUnit;
-    }
-
-    if (body.qty !== undefined) {
-      transaction.qty = body.qty;
-    }
-
-    if (body.unitPrice !== undefined) {
-      transaction.unitPrice = body.unitPrice;
-    }
-
-    if (body.registeredTimeKST !== undefined) {
-      transaction.registeredTimeKST = body.registeredTimeKST;
-    }
-
-    transaction.amount = calculateAmount(transaction.unitPrice, transaction.qty);
-    await transaction.save();
-
-    await writeAuditLog({
-      action: 'update',
-      entityType: 'transaction',
-      entityId: String(transaction._id),
-      before,
-      after: transaction.toObject()
-    });
-
-    const affectedProductIds = new Set<string>();
-    if (previousProductId) {
-      affectedProductIds.add(String(previousProductId));
-    }
-    if (transaction.productId) {
-      affectedProductIds.add(String(transaction.productId));
-    }
-
-    if (affectedProductIds.size > 0) {
-      const { recalculateInventory } = await import('@/server/services/inventory');
-      for (const productId of affectedProductIds) {
-        await recalculateInventory(productId);
+      if (body.productName !== undefined) {
+        const product = await ensureProductByName(body.productName, session);
+        found.productName = body.productName;
+        found.productId = product._id as Types.ObjectId;
       }
-    }
+      if (body.productUnit !== undefined) found.productUnit = body.productUnit;
+      if (body.qty !== undefined) found.qty = body.qty;
+      if (body.unitPrice !== undefined) found.unitPrice = body.unitPrice;
+      if (body.registeredTimeKST !== undefined) found.registeredTimeKST = body.registeredTimeKST;
+
+      found.amount = calculateAmount(found.unitPrice, found.qty);
+      await found.save({ session });
+
+      await writeAuditLog({
+        action: 'update',
+        entityType: 'transaction',
+        entityId: String(found._id),
+        before,
+        after: found.toObject()
+      }, session);
+
+      const affectedProductIds = new Set<string>();
+      if (previousProductId) affectedProductIds.add(String(previousProductId));
+      if (found.productId) affectedProductIds.add(String(found.productId));
+
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      for (const productId of affectedProductIds) await recalculateInventory(productId, session);
+      return found;
+    });
 
     return NextResponse.json({ data: mapTransactionRow(transaction.toObject() as Transaction) });
   } catch (error) {
@@ -198,26 +179,32 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     await connectMongo();
 
     const body = settlementLineDeleteSchema.parse(await request.json());
-    const transaction = await TransactionModel.findOne({
-      _id: new Types.ObjectId(body.id),
-      deletedAt: null
-    });
+    await withMongoTransaction(async (session) => {
+      const transaction = await TransactionModel.findOne({
+        _id: new Types.ObjectId(body.id),
+        deletedAt: null
+      }).session(session);
 
-    if (!transaction) {
-      throw new HttpError(404, '거래 행을 찾을 수 없습니다.');
-    }
+      if (!transaction) throw new HttpError(404, '거래 행을 찾을 수 없습니다.');
 
-    const before = transaction.toObject();
+      const before = transaction.toObject();
+      transaction.deletedAt = new Date();
+      await transaction.save({ session });
 
-    transaction.deletedAt = new Date();
-    await transaction.save();
+      if (transaction.productId) {
+        const { recalculateInventory } = await import('@/server/services/inventory');
+        await recalculateInventory(transaction.productId, session);
+      }
 
-    await writeAuditLog({
-      action: 'delete',
-      entityType: 'transaction',
-      entityId: String(transaction._id),
-      before,
-      after: transaction.toObject()
+      await writeAuditLog({
+        action: 'delete',
+        entityType: 'transaction',
+        entityId: String(transaction._id),
+        before,
+        after: transaction.toObject()
+      }, session);
+
+      return true;
     });
 
     return NextResponse.json({ data: { id: body.id } });

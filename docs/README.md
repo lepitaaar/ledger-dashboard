@@ -11,6 +11,7 @@
 - `deployment.md`: 웹사이트 배포 방식(도커/PM2/관리형 컨테이너)과 운영 점검 절차
 - `operations-runbook.md`: 로컬/운영 실행 절차와 점검 루틴
 - `troubleshooting.md`: 자주 발생하는 장애와 대응 방법
+- `error-handling-hardening.md`: 데이터 원자성, 외부 연동 안정성, 공통 오류 계약 개선 내역
 
 ## 권장 읽기 순서
 1. `mvp-stack-architecture.md`

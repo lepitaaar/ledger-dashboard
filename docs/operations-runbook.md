@@ -49,6 +49,7 @@ docker compose up --build
 - `.env`에 Atlas URI 반영 완료
 - `TZ=Asia/Seoul` 유지
 - MongoDB Atlas 네트워크 허용 IP/방화벽 확인
+- MongoDB가 트랜잭션을 지원하는 Atlas 클러스터 또는 replica set인지 확인
 - `npm run build` 성공
 - API 기본 점검:
   - `GET /api/vendors`

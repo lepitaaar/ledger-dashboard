@@ -1,5 +1,6 @@
-import { Types } from 'mongoose';
+import { type ClientSession, Types } from 'mongoose';
 import { INVENTORY_BASELINE_DATE_KEY } from '@/lib/inventory';
+import { withMongoTransaction } from '@/lib/db';
 import { ProductModel } from '@/server/models/product';
 import { AuctionPurchaseModel } from '@/server/models/auction-purchase';
 import { TransactionModel } from '@/server/models/transaction';
@@ -18,15 +19,16 @@ interface CombinedMovement {
 /**
  * 특정 상품에 대한 재고 원장(InventoryMovement)을 기준일부터 다시 계산하여 DB에 저장합니다.
  */
-export async function recalculateInventory(productId: string | Types.ObjectId): Promise<void> {
+async function recalculateInventoryInSession(
+  productId: string | Types.ObjectId,
+  session: ClientSession
+): Promise<void> {
   const prodId = new Types.ObjectId(productId);
 
-  // 1. 해당 상품의 기존 재고 원장 삭제
-  await InventoryMovementModel.deleteMany({ productId: prodId });
-
-  // 2. 상품 기초 재고 가져오기
-  const product = await ProductModel.findOne({ _id: prodId, deletedAt: null });
+  // 원본 조회부터 원장 교체까지 하나의 스냅샷에서 처리합니다.
+  const product = await ProductModel.findOne({ _id: prodId, deletedAt: null }).session(session);
   if (!product) {
+    await InventoryMovementModel.deleteMany({ productId: prodId }, { session });
     return;
   }
 
@@ -65,14 +67,14 @@ export async function recalculateInventory(productId: string | Types.ObjectId): 
     productId: prodId,
     isActive: true,
     dateKey: { $gte: INVENTORY_BASELINE_DATE_KEY }
-  }).lean();
+  }).session(session).lean();
 
   // 4. 기준일 이후 매출/반품 거래 내역 로드
   const transactions = await TransactionModel.find({
     productId: prodId,
     deletedAt: null,
     dateKey: { $gte: INVENTORY_BASELINE_DATE_KEY }
-  }).lean();
+  }).session(session).lean();
 
   // 5. 정렬 가능한 통합 이동 리스트 생성
   const combinedList: CombinedMovement[] = [];
@@ -197,10 +199,27 @@ export async function recalculateInventory(productId: string | Types.ObjectId): 
     }
   }
 
-  // 8. DB에 한꺼번에 기록
+  // 기존 원장은 새 원장 계산이 끝난 뒤 트랜잭션 안에서 교체합니다.
+  await InventoryMovementModel.deleteMany({ productId: prodId }, { session });
+
   if (movementsToSave.length > 0) {
-    await InventoryMovementModel.insertMany(movementsToSave);
+    await InventoryMovementModel.insertMany(movementsToSave, { session });
   }
+}
+
+export async function recalculateInventory(
+  productId: string | Types.ObjectId,
+  session?: ClientSession
+): Promise<void> {
+  if (session) {
+    await recalculateInventoryInSession(productId, session);
+    return;
+  }
+
+  await withMongoTransaction(async (transactionSession) => {
+    await recalculateInventoryInSession(productId, transactionSession);
+    return true;
+  });
 }
 
 /**

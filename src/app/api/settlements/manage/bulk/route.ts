@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { connectMongo } from '@/lib/db';
+import { connectMongo, withMongoTransaction } from '@/lib/db';
 import { settlementBulkSchema } from '@/lib/dto/settlement';
 import { handleApiError, HttpError } from '@/lib/http';
 import { getNowTimeKeyKst } from '@/lib/kst';
@@ -18,84 +18,75 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body = settlementBulkSchema.parse(await request.json());
     const uniqueIds = Array.from(new Set(body.transactionIds));
 
-    const objectIds = uniqueIds.map((id) => new Types.ObjectId(id));
+    const result = await withMongoTransaction(async (session) => {
+      const objectIds = uniqueIds.map((id) => new Types.ObjectId(id));
+      const transactions = await TransactionModel.find({
+        _id: { $in: objectIds },
+        deletedAt: null
+      }).session(session);
 
-    // Fetch all transactions to validate
-    const transactions = await TransactionModel.find({
-      _id: { $in: objectIds },
-      deletedAt: null
-    });
-
-    if (transactions.length !== uniqueIds.length) {
-      throw new HttpError(400, '존재하지 않거나 이미 삭제된 거래가 포함되어 있습니다.');
-    }
-
-    if (body.action === 'return') {
-      // Validate that all transactions have positive quantity
-      const hasInvalid = transactions.some((t) => t.qty <= 0);
-      if (hasInvalid) {
+      if (transactions.length !== uniqueIds.length) {
+        throw new HttpError(400, '존재하지 않거나 이미 삭제된 거래가 포함되어 있습니다.');
+      }
+      if (body.action === 'return' && transactions.some((transaction) => transaction.qty <= 0)) {
         throw new HttpError(400, '반품은 수량이 양수인 거래만 허용됩니다.');
       }
-    }
 
-    const processedIds: string[] = [];
-    const createdIds: string[] = [];
+      const processedIds: string[] = [];
+      const createdIds: string[] = [];
+      const affectedProductIds = new Set<string>();
 
-    if (body.action === 'delete') {
-      for (const t of transactions) {
-        const before = t.toObject();
-        t.deletedAt = new Date();
-        await t.save();
+      for (const transaction of transactions) {
+        const before = transaction.toObject();
 
-        await writeAuditLog({
-          action: 'delete',
-          entityType: 'transaction',
-          entityId: String(t._id),
-          before,
-          after: t.toObject()
-        });
+        if (body.action === 'delete') {
+          transaction.deletedAt = new Date();
+          await transaction.save({ session });
+          await writeAuditLog({
+            action: 'delete',
+            entityType: 'transaction',
+            entityId: String(transaction._id),
+            before,
+            after: transaction.toObject()
+          }, session);
+        } else {
+          const returnQty = -transaction.qty;
+          const [created] = await TransactionModel.create([{
+            dateKey: transaction.dateKey,
+            vendorId: transaction.vendorId,
+            productId: transaction.productId,
+            productName: transaction.productName,
+            productUnit: transaction.productUnit,
+            unitPrice: transaction.unitPrice,
+            qty: returnQty,
+            amount: calculateAmount(transaction.unitPrice, returnQty),
+            registeredTimeKST: getNowTimeKeyKst()
+          }], { session });
 
-        processedIds.push(String(t._id));
-      }
-    } else if (body.action === 'return') {
-      const nowTimeKey = getNowTimeKeyKst();
-      for (const t of transactions) {
-        const returnQty = -t.qty;
-        const created = await TransactionModel.create({
-          dateKey: t.dateKey,
-          vendorId: t.vendorId,
-          productId: t.productId,
-          productName: t.productName,
-          productUnit: t.productUnit,
-          unitPrice: t.unitPrice,
-          qty: returnQty,
-          amount: calculateAmount(t.unitPrice, returnQty),
-          registeredTimeKST: nowTimeKey
-        });
-
-        await writeAuditLog({
-          action: 'return',
-          entityType: 'transaction',
-          entityId: String(created._id),
-          before: t.toObject(),
-          after: created.toObject()
-        });
-
-        processedIds.push(String(t._id));
-        createdIds.push(String(created._id));
-
-        if (created.productId) {
-          const { recalculateInventory } = await import('@/server/services/inventory');
-          await recalculateInventory(created.productId);
+          await writeAuditLog({
+            action: 'return',
+            entityType: 'transaction',
+            entityId: String(created._id),
+            before,
+            after: created.toObject()
+          }, session);
+          createdIds.push(String(created._id));
         }
+
+        if (transaction.productId) affectedProductIds.add(String(transaction.productId));
+        processedIds.push(String(transaction._id));
       }
-    }
+
+      const { recalculateInventory } = await import('@/server/services/inventory');
+      for (const productId of affectedProductIds) await recalculateInventory(productId, session);
+      return { processedIds, createdIds };
+    });
 
     return NextResponse.json({
       data: {
         action: body.action,
-        processedIds,
-        createdIds
+        processedIds: result.processedIds,
+        createdIds: result.createdIds
       }
     });
   } catch (error) {

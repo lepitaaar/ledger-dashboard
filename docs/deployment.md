@@ -8,6 +8,7 @@
 - Next.js 앱을 상시 Node 런타임으로 운영한다.
 - 시간대는 반드시 `TZ=Asia/Seoul`로 고정한다.
 - MongoDB Atlas 연결은 `MONGODB_URI` 환경변수로 주입한다.
+- MongoDB 트랜잭션을 사용하므로 Atlas 또는 replica set 구성이 필수다.
 
 ## 2. 권장 방식 (Option A): Docker + VM
 

@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import { type ClientSession, Types } from 'mongoose';
 
 import { HttpError } from '@/lib/http';
 import { SettlementIssueInput } from '@/lib/dto/settlement';
@@ -7,11 +7,14 @@ import { TransactionModel } from '@/server/models/transaction';
 import { VendorModel } from '@/server/models/vendor';
 import { writeAuditLog } from '@/server/services/audit';
 
-export async function issueSettlement(input: SettlementIssueInput): Promise<{ id: string }> {
+export async function issueSettlement(
+  input: SettlementIssueInput,
+  session: ClientSession
+): Promise<{ id: string }> {
   const vendor = await VendorModel.findOne({
     _id: new Types.ObjectId(input.vendorId),
     deletedAt: null
-  }).lean();
+  }).session(session).lean();
 
   if (!vendor) {
     throw new HttpError(404, '업체를 찾을 수 없습니다.');
@@ -23,6 +26,7 @@ export async function issueSettlement(input: SettlementIssueInput): Promise<{ id
     deletedAt: null
   })
     .sort({ dateKey: 1, registeredTimeKST: 1, createdAt: 1 })
+    .session(session)
     .lean();
 
   if (transactions.length === 0) {
@@ -42,21 +46,21 @@ export async function issueSettlement(input: SettlementIssueInput): Promise<{ id
 
   const totalAmount = itemsSnapshot.reduce((acc, item) => acc + item.amount, 0);
 
-  const created = await SettlementModel.create({
+  const [created] = await SettlementModel.create([{
     issueDateKey: input.issueDateKey,
     vendorId: new Types.ObjectId(input.vendorId),
     rangeStartKey: input.rangeStartKey,
     rangeEndKey: input.rangeEndKey,
     itemsSnapshot,
     totalAmount
-  });
+  }], { session });
 
   await writeAuditLog({
     action: 'issue',
     entityType: 'settlement',
     entityId: String(created._id),
     after: created.toObject()
-  });
+  }, session);
 
   return { id: String(created._id) };
 }
