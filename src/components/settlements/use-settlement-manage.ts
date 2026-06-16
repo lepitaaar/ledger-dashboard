@@ -88,6 +88,19 @@ export type RowValidationErrors = Partial<Record<EditableValueField, string>>;
 
 export type AutoSaveState = "idle" | "saving" | "saved" | "error";
 
+type LocalDraftRow = {
+  localId: string;
+  id?: string;
+  vendorId: string;
+  dateKey: string;
+  productName: string;
+  productUnit: string;
+  qty: string;
+  unitPrice: string;
+  savedAt: string;
+  lastError?: string;
+};
+
 export type PrintConfigResponse = {
   data: SettlementPrintSupplier;
 };
@@ -101,6 +114,7 @@ export type ProductListResponse = {
 };
 
 const MIN_BASE_ROWS = 15;
+const LOCAL_DRAFT_STORAGE_PREFIX = "ledger:settlement-local-drafts:v1";
 
 function createLocalId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -116,6 +130,143 @@ function createEmptyRow(): EditableRow {
     unitPrice: "",
     registeredTimeKST: "",
   };
+}
+
+function getLocalDraftStorageKey(vendorId: string, dateKey: string): string {
+  return `${LOCAL_DRAFT_STORAGE_PREFIX}:${vendorId}:${dateKey}`;
+}
+
+function readLocalDraftRows(vendorId: string, dateKey: string): LocalDraftRow[] {
+  if (typeof window === "undefined" || !vendorId) {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(
+      getLocalDraftStorageKey(vendorId, dateKey),
+    );
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as LocalDraftRow[];
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (draft) =>
+        draft.vendorId === vendorId &&
+        draft.dateKey === dateKey &&
+        typeof draft.localId === "string" &&
+        typeof draft.productName === "string" &&
+        typeof draft.qty === "string" &&
+        typeof draft.unitPrice === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalDraftRows(
+  vendorId: string,
+  dateKey: string,
+  drafts: LocalDraftRow[],
+): void {
+  if (typeof window === "undefined" || !vendorId) {
+    return;
+  }
+
+  const key = getLocalDraftStorageKey(vendorId, dateKey);
+  try {
+    if (drafts.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+
+    window.localStorage.setItem(key, JSON.stringify(drafts));
+  } catch {
+    toast.error("로컬 임시저장 공간이 부족해 저장 실패 행을 백업하지 못했습니다.");
+  }
+}
+
+function upsertLocalDraftRow(
+  vendorId: string,
+  dateKey: string,
+  row: EditableRow,
+  errorMessage?: string,
+): void {
+  const drafts = readLocalDraftRows(vendorId, dateKey);
+  const draft: LocalDraftRow = {
+    localId: row.localId,
+    id: row.id,
+    vendorId,
+    dateKey,
+    productName: row.productName,
+    productUnit: row.productUnit,
+    qty: row.qty,
+    unitPrice: row.unitPrice,
+    savedAt: new Date().toISOString(),
+    lastError: errorMessage,
+  };
+
+  const key = row.id ?? row.localId;
+  const next = drafts.filter((item) => (item.id ?? item.localId) !== key);
+  next.push(draft);
+  writeLocalDraftRows(vendorId, dateKey, next);
+}
+
+function removeLocalDraftRow(
+  vendorId: string,
+  dateKey: string,
+  rowIdOrLocalId: string,
+): void {
+  const drafts = readLocalDraftRows(vendorId, dateKey);
+  writeLocalDraftRows(
+    vendorId,
+    dateKey,
+    drafts.filter(
+      (draft) =>
+        draft.localId !== rowIdOrLocalId && draft.id !== rowIdOrLocalId,
+    ),
+  );
+}
+
+function mapLocalDraftToEditable(draft: LocalDraftRow): EditableRow {
+  return {
+    localId: draft.localId,
+    id: draft.id,
+    selected: false,
+    productName: draft.productName,
+    productUnit: draft.productUnit,
+    qty: draft.qty,
+    unitPrice: draft.unitPrice,
+    registeredTimeKST: draft.id ? "" : "로컬 임시저장",
+  };
+}
+
+function mergeLocalDraftRows(
+  serverRows: EditableRow[],
+  drafts: LocalDraftRow[],
+): EditableRow[] {
+  if (drafts.length === 0) {
+    return serverRows;
+  }
+
+  const rowsById = new Map(serverRows.map((row) => [row.id, row]));
+  const merged = serverRows.map((row) => {
+    const draft = drafts.find((item) => item.id && item.id === row.id);
+    return draft
+      ? {
+          ...mapLocalDraftToEditable(draft),
+          registeredTimeKST: row.registeredTimeKST,
+        }
+      : row;
+  });
+
+  for (const draft of drafts) {
+    if (!draft.id || !rowsById.has(draft.id)) {
+      merged.push(mapLocalDraftToEditable(draft));
+    }
+  }
+
+  return merged;
 }
 
 function ensureBaseRows(rows: EditableRow[]): EditableRow[] {
@@ -223,6 +374,7 @@ export function useSettlementManage() {
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
   const rowsRef = useRef<EditableRow[]>(rows);
+  const syncingLocalDraftsRef = useRef(false);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -341,7 +493,8 @@ export function useSettlementManage() {
       const mappedRows = response.data.rows.map((row) =>
         mapApiRowToEditable(row),
       );
-      setRows(ensureBaseRows(mappedRows));
+      const localDrafts = readLocalDraftRows(selectedVendorId, dateKey);
+      setRows(ensureBaseRows(mergeLocalDraftRows(mappedRows, localDrafts)));
       setEditingRowId(null);
       setSavedSnapshots(
         Object.fromEntries(
@@ -357,6 +510,13 @@ export function useSettlementManage() {
         ),
       );
       setRowValidationErrors({});
+      if (localDrafts.length > 0) {
+        setAutoSaveState("error");
+        setAutoSaveRowKey(localDrafts[0].id ?? localDrafts[0].localId);
+        toast.info(
+          `로컬 임시저장 ${localDrafts.length}건을 복구했습니다. 서버 동기화를 다시 시도합니다.`,
+        );
+      }
 
       setVendorInput((prev) => prev || response.data.vendor.name);
     } catch (error) {
@@ -402,6 +562,7 @@ export function useSettlementManage() {
     field: EditableField,
     value: string | boolean,
   ): void => {
+    const currentRow = rowsRef.current.find((row) => row.localId === localId);
     setRows((prev) =>
       prev.map((row) => {
         if (row.localId !== localId) {
@@ -414,6 +575,19 @@ export function useSettlementManage() {
         };
       }),
     );
+
+    if (selectedVendorId && field !== "selected" && currentRow) {
+      const drafts = readLocalDraftRows(selectedVendorId, dateKey);
+      const hasDraft = drafts.some(
+        (draft) => draft.localId === localId || draft.id === currentRow.id,
+      );
+      if (hasDraft) {
+        upsertLocalDraftRow(selectedVendorId, dateKey, {
+          ...currentRow,
+          [field]: value as string,
+        });
+      }
+    }
 
     if (autoSaveRowKey === localId && autoSaveState === "error") {
       setAutoSaveState("idle");
@@ -500,7 +674,7 @@ export function useSettlementManage() {
     }
   };
 
-  const buildPersistablePayload = (
+  const buildPersistablePayload = useCallback((
     row: EditableRow,
   ): { payload: PersistableRowPayload | null; errors: RowValidationErrors } => {
     const productName = row.productName.trim();
@@ -545,7 +719,7 @@ export function useSettlementManage() {
       },
       errors: {},
     };
-  };
+  }, []);
 
   const isSameAsSavedSnapshot = (
     row: EditableRow,
@@ -639,6 +813,8 @@ export function useSettlementManage() {
           unitPrice: parseNumber(savedRow.unitPrice),
         }
       }));
+      removeLocalDraftRow(selectedVendorId, dateKey, row.id ?? row.localId);
+      removeLocalDraftRow(selectedVendorId, dateKey, savedRow.id!);
 
       setAutoSaveState("saved");
       setAutoSaveRowKey(savedRow.id!);
@@ -649,8 +825,9 @@ export function useSettlementManage() {
       setAutoSaveState("error");
       setAutoSaveRowKey(row.id ?? row.localId);
       const errorMsg = error instanceof Error ? error.message : "서버 오류";
+      upsertLocalDraftRow(selectedVendorId, dateKey, row, errorMsg);
       const rowName = row.productName ? `"${row.productName}" ` : "신규 행 ";
-      toast.error(`${rowName}저장 실패: ${errorMsg}. 입력값을 확인하고 다시 시도하시거나 Escape를 눌러 복원하세요.`);
+      toast.error(`${rowName}저장 실패: ${errorMsg}. 로컬에 임시저장했으며, 나중에 다시 동기화합니다.`);
     } finally {
       setProcessingRowId(null);
     }
@@ -706,6 +883,146 @@ export function useSettlementManage() {
     await persistRow(row, payload);
     setEditingRowId((current) => (current === row.localId ? null : current));
   };
+
+  const syncLocalDraftsFromStorage = useCallback(async (
+    showSuccessToast = false,
+  ): Promise<void> => {
+    if (!selectedVendorId || syncingLocalDraftsRef.current) {
+      return;
+    }
+
+    const drafts = readLocalDraftRows(selectedVendorId, dateKey);
+    if (drafts.length === 0) {
+      return;
+    }
+
+    syncingLocalDraftsRef.current = true;
+    try {
+      let syncedCount = 0;
+      for (const draft of drafts) {
+        const draftRow = mapLocalDraftToEditable(draft);
+        const { payload } = buildPersistablePayload(draftRow);
+        if (!payload) {
+          continue;
+        }
+
+        try {
+          let updatedRowData: SettlementManageRowResponse;
+          if (draft.id) {
+            const response = await fetchJson<{ data: SettlementManageRowResponse }>(
+              "/api/settlements/manage",
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  id: draft.id,
+                  productName: payload.productName,
+                  productUnit: payload.productUnit,
+                  qty: payload.qty,
+                  unitPrice: payload.unitPrice,
+                }),
+              },
+            );
+            updatedRowData = response.data;
+          } else {
+            const response = await fetchJson<{ data: SettlementManageRowResponse }>(
+              "/api/settlements/manage",
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  vendorId: selectedVendorId,
+                  dateKey,
+                  productName: payload.productName,
+                  productUnit: payload.productUnit,
+                  qty: payload.qty,
+                  unitPrice: payload.unitPrice,
+                }),
+              },
+            );
+            updatedRowData = response.data;
+          }
+
+          const savedRow = mapApiRowToEditable(updatedRowData);
+          removeLocalDraftRow(selectedVendorId, dateKey, draft.id ?? draft.localId);
+          removeLocalDraftRow(selectedVendorId, dateKey, savedRow.id!);
+          syncedCount += 1;
+
+          setRows((prev) => {
+            let didReplace = false;
+            const next = prev.map((item) => {
+              if (
+                item.localId === draft.localId ||
+                item.id === draft.id ||
+                item.id === savedRow.id
+              ) {
+                didReplace = true;
+                return {
+                  ...savedRow,
+                  selected: item.selected,
+                };
+              }
+              return item;
+            });
+
+            return ensureBaseRows(didReplace ? next : [...next, savedRow]);
+          });
+          setSavedSnapshots((prev) => ({
+            ...prev,
+            [savedRow.id!]: {
+              productName: savedRow.productName,
+              productUnit: savedRow.productUnit,
+              qty: parseNumber(savedRow.qty),
+              unitPrice: parseNumber(savedRow.unitPrice),
+            },
+          }));
+        } catch (error) {
+          upsertLocalDraftRow(
+            selectedVendorId,
+            dateKey,
+            draftRow,
+            error instanceof Error ? error.message : "서버 오류",
+          );
+        }
+      }
+
+      const remainingDrafts = readLocalDraftRows(selectedVendorId, dateKey);
+      if (remainingDrafts.length === 0 && syncedCount > 0) {
+        setAutoSaveState("saved");
+        setAutoSaveRowKey(null);
+        setLastAutoSavedAt(
+          DateTime.now().setZone(KST_ZONE).toFormat("HH:mm:ss"),
+        );
+        if (showSuccessToast) {
+          toast.success(`로컬 임시저장 ${syncedCount}건을 DB에 동기화했습니다.`);
+        }
+      } else if (remainingDrafts.length > 0) {
+        setAutoSaveState("error");
+        setAutoSaveRowKey(remainingDrafts[0].id ?? remainingDrafts[0].localId);
+      }
+    } finally {
+      syncingLocalDraftsRef.current = false;
+    }
+  }, [buildPersistablePayload, dateKey, selectedVendorId]);
+
+  useEffect(() => {
+    if (!selectedVendorId || loadingRows) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void syncLocalDraftsFromStorage(true);
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [loadingRows, selectedVendorId, syncLocalDraftsFromStorage]);
+
+  useEffect(() => {
+    const handleOnline = (): void => {
+      void syncLocalDraftsFromStorage(true);
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [syncLocalDraftsFromStorage]);
 
   const handleRowBlur = (localId: string): void => {
     window.setTimeout(() => {
@@ -786,6 +1103,9 @@ export function useSettlementManage() {
 
   const deleteRow = async (row: EditableRow): Promise<void> => {
     if (!row.id) {
+      if (selectedVendorId) {
+        removeLocalDraftRow(selectedVendorId, dateKey, row.localId);
+      }
       setRows((prev) =>
         ensureBaseRows(prev.filter((item) => item.localId !== row.localId)),
       );
@@ -807,6 +1127,7 @@ export function useSettlementManage() {
         delete next[row.id!];
         return next;
       });
+      removeLocalDraftRow(selectedVendorId, dateKey, row.id);
       toast.success("품목이 삭제되었습니다.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "행 삭제 실패");
@@ -816,6 +1137,10 @@ export function useSettlementManage() {
   };
 
   const cancelRowEdit = (row: EditableRow): void => {
+    if (selectedVendorId) {
+      removeLocalDraftRow(selectedVendorId, dateKey, row.id ?? row.localId);
+    }
+
     if (row.id) {
       const snapshot = savedSnapshots[row.id];
       if (snapshot) {
