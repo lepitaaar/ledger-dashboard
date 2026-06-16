@@ -27,6 +27,30 @@ describe('fetchJson', () => {
     expect(secondHeaders.get('Idempotency-Key')).toBe(firstHeaders.get('Idempotency-Key'));
   });
 
+  it('creates an idempotency key when crypto.randomUUID is unavailable', async () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: vi.fn((bytes: Uint8Array) => {
+        bytes.forEach((_, index) => {
+          bytes[index] = index;
+        });
+        return bytes;
+      })
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { ok: true } }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchJson('/api/transactions', {
+      method: 'POST',
+      body: JSON.stringify({ value: 1 })
+    })).resolves.toEqual({ data: { ok: true } });
+
+    const headers = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(headers.get('Idempotency-Key')).toBe('00010203-0405-4607-8809-0a0b0c0d0e0f');
+  });
+
   it('preserves structured API error details', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: {
