@@ -19,7 +19,9 @@ export async function GET(
     const detail = await getVendorDetailView({
       vendorId: params.id,
       page: query.page,
-      limit: query.limit
+      limit: query.limit,
+      startKey: query.startKey,
+      endKey: query.endKey
     });
 
     return NextResponse.json({

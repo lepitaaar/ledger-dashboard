@@ -2,7 +2,7 @@ import { DateTime } from 'luxon';
 import { Types } from 'mongoose';
 
 import { HttpError } from '@/lib/http';
-import { KST_ZONE, getCurrentMonthDateRange } from '@/lib/kst';
+import { KST_ZONE, getCurrentMonthDateRange, normalizeDateRange } from '@/lib/kst';
 import { buildPageMeta, normalizePagination } from '@/lib/pagination';
 import { type Payment, PaymentModel } from '@/server/models/payment';
 import { type Transaction, TransactionModel } from '@/server/models/transaction';
@@ -26,8 +26,8 @@ export type VendorDetailViewData = {
     isActive: boolean;
   };
   metrics: {
-    monthlySalesAmount: number;
-    monthlyPaymentAmount: number;
+    periodSalesAmount: number;
+    periodPaymentAmount: number;
     totalSalesAmount: number;
     totalPaymentAmount: number;
     outstandingAmount: number;
@@ -48,6 +48,10 @@ export type VendorDetailViewMeta = {
   limit: number;
   total: number;
   totalPages: number;
+  appliedRange: {
+    startKey: string;
+    endKey: string;
+  };
 };
 
 export type VendorDetailViewResult = {
@@ -63,6 +67,8 @@ export async function getVendorDetailView(input: {
   vendorId: string;
   page?: number;
   limit?: number;
+  startKey?: string;
+  endKey?: string;
 }): Promise<VendorDetailViewResult> {
   let vendorObjectId: Types.ObjectId;
   try {
@@ -72,6 +78,16 @@ export async function getVendorDetailView(input: {
   }
 
   const { page, limit, skip } = normalizePagination(input.page, input.limit);
+  const defaultRange = getCurrentMonthDateRange();
+  let appliedRange: { startKey: string; endKey: string };
+
+  try {
+    appliedRange =
+      normalizeDateRange(input.startKey, input.endKey) ??
+      defaultRange;
+  } catch {
+    throw new HttpError(400, '기간 필터가 올바르지 않습니다.');
+  }
 
   const vendor = await VendorModel.findOne({
     _id: vendorObjectId,
@@ -96,17 +112,15 @@ export async function getVendorDetailView(input: {
       .lean<Payment[]>()
   ]);
 
-  const monthRange = getCurrentMonthDateRange();
-
   const totalSalesAmount = transactions.reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
   const totalPaymentAmount = payments.reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
 
-  const monthlySalesAmount = transactions
-    .filter((item) => item.dateKey >= monthRange.startKey && item.dateKey <= monthRange.endKey)
+  const periodSalesAmount = transactions
+    .filter((item) => item.dateKey >= appliedRange.startKey && item.dateKey <= appliedRange.endKey)
     .reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
 
-  const monthlyPaymentAmount = payments
-    .filter((item) => item.dateKey >= monthRange.startKey && item.dateKey <= monthRange.endKey)
+  const periodPaymentAmount = payments
+    .filter((item) => item.dateKey >= appliedRange.startKey && item.dateKey <= appliedRange.endKey)
     .reduce((acc, item) => acc + Number(item.amount ?? 0), 0);
 
   const rawHistory: RawHistoryItem[] = [
@@ -154,7 +168,10 @@ export async function getVendorDetailView(input: {
     };
   });
 
-  const sortedForView = [...historyWithBalance].reverse();
+  const filteredHistory = historyWithBalance.filter(
+    (item) => item.dateKey >= appliedRange.startKey && item.dateKey <= appliedRange.endKey
+  );
+  const sortedForView = [...filteredHistory].reverse();
   const pagedHistory = sortedForView.slice(skip, skip + limit);
 
   return {
@@ -167,8 +184,8 @@ export async function getVendorDetailView(input: {
         isActive: vendor.isActive
       },
       metrics: {
-        monthlySalesAmount,
-        monthlyPaymentAmount,
+        periodSalesAmount,
+        periodPaymentAmount,
         totalSalesAmount,
         totalPaymentAmount,
         outstandingAmount: totalSalesAmount - totalPaymentAmount
@@ -176,7 +193,8 @@ export async function getVendorDetailView(input: {
       history: pagedHistory
     },
     meta: {
-      ...buildPageMeta(page, limit, sortedForView.length)
+      ...buildPageMeta(page, limit, sortedForView.length),
+      appliedRange
     }
   };
 }

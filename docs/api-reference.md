@@ -55,6 +55,13 @@
 설명:
 - 거래처 상세 지표 + 매출/입금 통합 이력
 
+쿼리:
+- `page`, `limit`
+- `startKey`, `endKey` (기본값: KST 이번 달)
+
+응답 메타 추가 필드:
+- `appliedRange`: 실제 적용된 기간
+
 ### POST `/api/vendors/:id/payments`
 요청:
 ```json

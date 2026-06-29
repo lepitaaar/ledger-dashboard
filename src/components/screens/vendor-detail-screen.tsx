@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DatePicker } from "@/components/ui/date-picker";
+import {
+  ActiveFilterChips,
+  FilterBar,
+  FilterChip,
+} from "@/components/ui/filter-bar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,7 +37,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { buildQueryString, fetchJson } from "@/lib/client";
-import { getTodayDateKey } from "@/lib/kst";
+import {
+  getCurrentMonthDateRange,
+  getDateRangeByPreset,
+  getTodayDateKey,
+  type DatePreset,
+} from "@/lib/kst";
 import { formatCurrency } from "@/lib/utils";
 
 type VendorDetailResponse = {
@@ -45,8 +55,8 @@ type VendorDetailResponse = {
       isActive: boolean;
     };
     metrics: {
-      monthlySalesAmount: number;
-      monthlyPaymentAmount: number;
+      periodSalesAmount: number;
+      periodPaymentAmount: number;
       totalSalesAmount: number;
       totalPaymentAmount: number;
       outstandingAmount: number;
@@ -66,6 +76,10 @@ type VendorDetailResponse = {
     limit: number;
     total: number;
     totalPages: number;
+    appliedRange: {
+      startKey: string;
+      endKey: string;
+    };
   };
 };
 
@@ -76,12 +90,31 @@ type VendorDetailScreenProps = {
   initialError?: string | null;
 };
 
+const quickPresets: Array<{ key: DatePreset | "month"; label: string }> = [
+  { key: "month", label: "이번 달" },
+  { key: "today", label: "오늘" },
+  { key: "1w", label: "최근 1주" },
+  { key: "1m", label: "최근 1개월" },
+  { key: "3m", label: "최근 3개월" },
+];
+
+function normalizeRange(
+  startKey: string,
+  endKey: string,
+): { startKey: string; endKey: string } {
+  return startKey <= endKey
+    ? { startKey, endKey }
+    : { startKey: endKey, endKey: startKey };
+}
+
 export function VendorDetailScreen({
   vendorId,
   initialData = null,
   initialMeta = null,
   initialError = null,
 }: VendorDetailScreenProps): JSX.Element {
+  const defaultRange = getCurrentMonthDateRange();
+  const initialRange = initialMeta?.appliedRange ?? defaultRange;
   const [data, setData] = useState<VendorDetailResponse["data"] | null>(
     initialData,
   );
@@ -91,6 +124,9 @@ export function VendorDetailScreen({
   const [page, setPage] = useState(initialMeta?.page ?? 1);
   const limit = 20;
   const [totalPages, setTotalPages] = useState(initialMeta?.totalPages ?? 1);
+  const [preset, setPreset] = useState<DatePreset | "month" | "custom">("month");
+  const [startKey, setStartKey] = useState(initialRange.startKey);
+  const [endKey, setEndKey] = useState(initialRange.endKey);
   const skipInitialFetchRef = useRef(Boolean(initialData));
 
   const [paymentDateKey, setPaymentDateKey] = useState(getTodayDateKey());
@@ -100,6 +136,10 @@ export function VendorDetailScreen({
   const router = useRouter();
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const effectiveRange = useMemo(
+    () => normalizeRange(startKey, endKey),
+    [startKey, endKey],
+  );
 
   const confirmDelete = async (): Promise<void> => {
     setDeleting(true);
@@ -124,7 +164,12 @@ export function VendorDetailScreen({
     setError(null);
 
     try {
-      const query = buildQueryString({ page, limit });
+      const query = buildQueryString({
+        page,
+        limit,
+        startKey: effectiveRange.startKey,
+        endKey: effectiveRange.endKey,
+      });
       const response = await fetchJson<VendorDetailResponse>(
         `/api/vendors/${vendorId}?${query}`,
       );
@@ -139,7 +184,7 @@ export function VendorDetailScreen({
     } finally {
       setLoading(false);
     }
-  }, [vendorId, page, limit]);
+  }, [vendorId, page, limit, effectiveRange.startKey, effectiveRange.endKey]);
 
   useEffect(() => {
     if (skipInitialFetchRef.current) {
@@ -179,6 +224,27 @@ export function VendorDetailScreen({
     } finally {
       setSavingPayment(false);
     }
+  };
+
+  const handlePreset = (nextPreset: DatePreset | "month"): void => {
+    const range =
+      nextPreset === "month"
+        ? getCurrentMonthDateRange()
+        : getDateRangeByPreset(nextPreset);
+    setPreset(nextPreset);
+    setStartKey(range.startKey);
+    setEndKey(range.endKey);
+    setPage(1);
+  };
+
+  const handleCustomDate = (type: "start" | "end", value: string): void => {
+    setPreset("custom");
+    if (type === "start") {
+      setStartKey(value);
+    } else {
+      setEndKey(value);
+    }
+    setPage(1);
   };
 
   if (loading && !data) {
@@ -232,17 +298,23 @@ export function VendorDetailScreen({
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardContent className="p-5">
-            <p className="text-sm text-slate-500">금월 총 거래금액</p>
+            <p className="text-sm text-slate-500">기간 총 거래금액</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              {formatCurrency(data.metrics.monthlySalesAmount)}
+              {formatCurrency(data.metrics.periodSalesAmount)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {effectiveRange.startKey} ~ {effectiveRange.endKey}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
-            <p className="text-sm text-slate-500">금월 입금금액</p>
+            <p className="text-sm text-slate-500">기간 입금금액</p>
             <p className="mt-2 text-2xl font-bold text-blue-600">
-              {formatCurrency(data.metrics.monthlyPaymentAmount)}
+              {formatCurrency(data.metrics.periodPaymentAmount)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {effectiveRange.startKey} ~ {effectiveRange.endKey}
             </p>
           </CardContent>
         </Card>
@@ -259,6 +331,49 @@ export function VendorDetailScreen({
           </CardContent>
         </Card>
       </div>
+
+      <FilterBar
+        footer={
+          <ActiveFilterChips>
+            <FilterChip
+              label={`${effectiveRange.startKey} ~ ${effectiveRange.endKey}`}
+            />
+          </ActiveFilterChips>
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          {quickPresets.map((item) => (
+            <Button
+              key={item.key}
+              type="button"
+              size="sm"
+              variant={preset === item.key ? "default" : "outline"}
+              onClick={() => handlePreset(item.key)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[180px_180px]">
+          <div className="space-y-2">
+            <Label htmlFor="vendor-detail-start-date">시작 날짜</Label>
+            <DatePicker
+              id="vendor-detail-start-date"
+              value={startKey}
+              onChange={(value) => handleCustomDate("start", value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="vendor-detail-end-date">종료 날짜</Label>
+            <DatePicker
+              id="vendor-detail-end-date"
+              value={endKey}
+              onChange={(value) => handleCustomDate("end", value)}
+            />
+          </div>
+        </div>
+      </FilterBar>
 
       <Card>
         <CardHeader>

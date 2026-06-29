@@ -75,10 +75,22 @@ export const vendorDetailParamSchema = z.object({
   id: objectIdSchema
 });
 
-export const vendorDetailQuerySchema = z.object({
-  page: queryNumberSchema(1),
-  limit: queryNumberSchema(50)
-});
+export const vendorDetailQuerySchema = z
+  .object({
+    page: queryNumberSchema(1),
+    limit: queryNumberSchema(50),
+    startKey: dateKeySchema.optional(),
+    endKey: dateKeySchema.optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.startKey && value.endKey && value.startKey > value.endKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startKey'],
+        message: '시작일은 종료일보다 클 수 없습니다.'
+      });
+    }
+  });
 
 export const vendorPaymentCreateSchema = z.object({
   dateKey: dateKeySchema,
